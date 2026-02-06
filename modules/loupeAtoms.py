@@ -20,7 +20,7 @@ class AtomsElement(VisualElement):
             parent=parent,
             light_color=(0, 0, 0),
             light_ambient=1,
-            antialias=1,
+            antialias=0,
         )
         super().__init__(*args, **kwargs, singleElement=self.scatter)
         self.edge_width = 0.02
