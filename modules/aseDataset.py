@@ -1,8 +1,11 @@
+import os
+import logging
 import numpy as np
 from loaders.datasetLoader import DatasetLoader
 import ase.io
 from collections.abc import Iterable
 
+logger = logging.getLogger("FFAST")
 
 class aseDatasetLoader(DatasetLoader):
     datasetName = "ase"
@@ -12,6 +15,7 @@ class aseDatasetLoader(DatasetLoader):
     def __init__(self, path, *args, **kwargs):
         super().__init__(path)
         self.atomsList = ase.io.read(path, index=":")
+        _, self.file_extension = os.path.splitext(path)
         self.N = len(self.atomsList)
 
         exAtoms = self.atomsList[0]  # assumes all the same molecule!!
@@ -25,6 +29,19 @@ class aseDatasetLoader(DatasetLoader):
             self.lattice = None
 
         self.chem = self.zToChemicalFormula(self.z)
+
+
+    def ForceKeys(self):
+        exAtoms = self.atomsList[0]
+        num_key = 0
+        forcekeys = []
+        for key in exAtoms.arrays.keys():
+            if "force" in key.lower():
+                logger.debug(f"Found forces in array '{key}' for index 0.")
+                num_key += 1
+                forcekeys.append(key)
+
+        return forcekeys
 
     def getN(self):
         return self.N
@@ -63,14 +80,28 @@ class aseDatasetLoader(DatasetLoader):
 
     def getForces(self, indices=None):
         # probably should just do it once at the start and save it as np arrays?
-        if indices is None:
-            indices = np.arange(self.N)
-        elif not isinstance(indices, Iterable):
-            return self.atomsList[indices].get_forces()
+        keys = self.ForceKeys()
 
-        R = []
-        for idx in indices:
-            R.append(self.atomsList[idx].get_forces())
+        if len(keys) == 0:
+            if indices is None:
+                indices = np.arange(self.N)
+            elif not isinstance(indices, Iterable):
+                return self.atomsList[indices].get_forces()
+
+            R = []
+            for idx in indices:
+                R.append(self.atomsList[idx].get_forces())
+        else:
+            key = keys[0]
+            logger.info(f"Using forces from array(s) {key} out of {keys}.")
+            if indices is None:
+                indices = np.arange(self.N)
+            elif not isinstance(indices, Iterable):
+                return self.atomsList[indices].arrays[key]
+
+            R = []
+            for idx in indices:
+                R.append(self.atomsList[idx].arrays[key])
 
         return np.array(R)
 
