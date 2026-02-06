@@ -163,3 +163,4 @@ cython_debug/
 #.idea/
 test2.py
 config/user.json
+CLAUDE.md
