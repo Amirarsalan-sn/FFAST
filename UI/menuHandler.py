@@ -20,10 +20,10 @@ class MenuHandler(EventClass):
         File.addAction("Load", self.onLoad, "Ctrl+l")
 
         File.addAction("Load Dataset", self.onDatasetLoad, "Ctrl+d")
-        File.addAction("Load Model", self.onModelLoad, "Ctrl+e")
+        File.addAction("Load Model", self.onModelLoad, "Ctrl+m")
 
         File.addAction("Load Zero Model", self.loadZeroModel, "Ctrl+0")
-        File.addAction("Load Prediction", self.loadPrepredictedModel)
+        File.addAction("Load Prediction", self.loadPrepredictedModel, "Ctrl+p")
 
         # File.addAction("Preferences", self.onPreferences)
         # File.addAction("Exit", self.onExit)
@@ -66,7 +66,7 @@ class MenuHandler(EventClass):
 
     def onDatasetLoad(self):
         env = self.handler.env
-        fileTypes = list(env.datasetTypes.keys())
+        fileTypes = sorted(list(env.datasetTypes.keys()))
         extensions = [
             env.datasetTypes[x].datasetFileExtension for x in fileTypes
         ]
@@ -90,8 +90,8 @@ class MenuHandler(EventClass):
         env = self.handler.env
         names = [x.getName() for x in env.getAllDatasets(excludeSubs=True)]
         keys = [x.fingerprint for x in env.getAllDatasets(excludeSubs=True)]
-        extensions = ["*.npz"] * len(names)
-        extensions += ["*"] * len(names)
+        extensions = ["*"] * len(names)
+        extensions += ["*.npz"] * len(names)
         names += names
 
         path, typ = customFileDialog(
