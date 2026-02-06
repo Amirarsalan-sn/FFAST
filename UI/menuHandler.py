@@ -33,7 +33,8 @@ class MenuHandler(EventClass):
         Loupe.addAction("New", self.newLoupe, "Ctrl+n")
 
     def onSave(self):
-        (path, _) = QFileDialog.getSaveFileName(self.handler.window)
+        workdir = self.handler.workdir
+        (path, _) = QFileDialog.getSaveFileName(self.handler.window, "Save File", workdir)
         if path is None or path.strip() == "":
             return
 
@@ -46,7 +47,8 @@ class MenuHandler(EventClass):
         )
 
     def onLoad(self):
-        path = QFileDialog.getExistingDirectory(self.handler.window)
+        workdir = self.handler.workdir
+        path = QFileDialog.getExistingDirectory(self.handler.window, "Select Directory", workdir)
         if path is None or path.strip() == "":
             return
 
@@ -66,28 +68,31 @@ class MenuHandler(EventClass):
 
     def onDatasetLoad(self):
         env = self.handler.env
+        workdir = self.handler.workdir
         fileTypes = sorted(list(env.datasetTypes.keys()))
         extensions = [
             env.datasetTypes[x].datasetFileExtension for x in fileTypes
         ]
         path, typ = customFileDialog(
-            self.handler.window, fileTypes=fileTypes, extensions=extensions
+            self.handler.window, fileTypes=fileTypes, extensions=extensions, directory=workdir
         )
 
         env.taskLoadDataset(path, typ)
 
     def onModelLoad(self):
         env = self.handler.env
+        workdir = self.handler.workdir
         fileTypes = list(env.modelTypes.keys())
         extensions = [env.modelTypes[x].modelFileExtension for x in fileTypes]
         path, typ = customFileDialog(
-            self.handler.window, fileTypes=fileTypes, extensions=extensions
+            self.handler.window, fileTypes=fileTypes, extensions=extensions, directory=workdir
         )
 
         env.taskLoadModel(path, typ)
 
     def loadPrepredictedModel(self):
         env = self.handler.env
+        workdir = self.handler.workdir
         names = [x.getName() for x in env.getAllDatasets(excludeSubs=True)]
         keys = [x.fingerprint for x in env.getAllDatasets(excludeSubs=True)]
         extensions = ["*"] * len(names)
@@ -95,7 +100,7 @@ class MenuHandler(EventClass):
         names += names
 
         path, typ = customFileDialog(
-            self.handler.window, fileTypes=names, extensions=extensions
+            self.handler.window, fileTypes=names, extensions=extensions, directory=workdir
         )
         idx = names.index(typ)
         env.loadPrepredictedDataset(path, keys[idx])

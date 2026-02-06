@@ -1722,17 +1722,17 @@ class SettingsPane(Widget, EventChildClass):
 #############
 
 
-def customFileDialog(parent, fileTypes=None, extensions=None, save=False):
+def customFileDialog(parent, fileTypes=None, extensions=None, save=False, directory=""):
     options = QFileDialog.Options()
 
     if fileTypes is None:
         if save:
             fileName, selectedFilter = QFileDialog.getSaveFileName(
-                parent, "Save File", "", options=options
+                parent, "Save File", directory, options=options
             )
         else:
             fileName, selectedFilter = QFileDialog.getOpenFileName(
-                parent, "Open File", "", options=options
+                parent, "Open File", directory, options=options
             )
         return fileName, None
     else:
@@ -1746,11 +1746,11 @@ def customFileDialog(parent, fileTypes=None, extensions=None, save=False):
         filterString = ";;".join(filterList)
         if save:
             fileName, selectedFilter = QFileDialog.getSaveFileName(
-                parent, "Save File", "", filterString, options=options
+                parent, "Save File", directory, filterString, options=options
             )
         else:
             fileName, selectedFilter = QFileDialog.getOpenFileName(
-                parent, "Open File", "", filterString, options=options
+                parent, "Open File", directory, filterString, options=options
             )
 
         if fileName == "":
