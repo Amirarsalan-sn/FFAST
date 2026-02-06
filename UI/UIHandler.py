@@ -19,9 +19,11 @@ class UIHandler(EventClass):
     tabs = []
     loupes = []
     loupeModules = []
+    workdir = None  # Working directory for file dialogs
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, workdir=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.workdir = workdir if workdir else os.getcwd()
         self.eventSubscribe("QUIT_READY", self.setQuitReady)
 
     def quitEvent(self):
