@@ -108,8 +108,17 @@ class aseDatasetLoader(DatasetLoader):
     def getElements(self):
         return self.z
 
-    def getLattice(self):
-        return None
+    def getLattice(self, indices=None):
+        """Return the unit cell/lattice for specified frame(s)."""
+        if indices is None:
+            indices = np.arange(self.N)
+        elif not isinstance(indices, Iterable):
+            return self.atomsList[indices].get_cell()
+
+        R = []
+        for idx in indices:
+            R.append(self.atomsList[idx].get_cell())
+        return np.array(R)
 
     @staticmethod
     def saveDataset(dataset, path, format=None, taskID=None):
