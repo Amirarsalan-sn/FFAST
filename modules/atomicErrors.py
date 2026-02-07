@@ -34,10 +34,28 @@ def loadData(env):
                 idxs = np.argwhere(z == i)
                 idxs = idxs.flatten()
 
-                diff = diffAll[:, idxs, :]
+                # Handle variable vs uniform datasets
+                if isinstance(diffAll, list):
+                    # Variable dataset: compute per-molecule MAE for atoms of type i
+                    mae_list = []
+                    for mol_idx in range(len(diffAll)):
+                        z_mol = dataset.getElements(mol_idx)
+                        mol_idxs = np.argwhere(z_mol == i).flatten()
+                        if len(mol_idxs) > 0:
+                            mol_diff = diffAll[mol_idx][mol_idxs]  # (n_atoms_of_type_i, 3)
+                            mol_mae = np.mean(np.abs(mol_diff))
+                            mae_list.append(mol_mae)
 
-                diff = diff.reshape(diff.shape[0], -1)
-                mae = np.mean(np.abs(diff), axis=1)
+                    if len(mae_list) == 0:
+                        # No atoms of this type found
+                        continue
+
+                    mae = np.array(mae_list)
+                else:
+                    # Uniform dataset: diffAll is (N, M, 3) array
+                    diff = diffAll[:, idxs, :]
+                    diff = diff.reshape(diff.shape[0], -1)
+                    mae = np.mean(np.abs(diff), axis=1)
 
                 kde = gaussian_kde(np.abs(mae))
 
@@ -77,11 +95,29 @@ def loadData(env):
                 idxs = np.argwhere(z == i)
                 idxs = idxs.flatten()
 
-                diff = diffAll[:, idxs, :]
+                # Handle variable vs uniform datasets
+                if isinstance(diffAll, list):
+                    # Variable dataset: aggregate all atoms of type i across all molecules
+                    diff_list = []
+                    for mol_idx in range(len(diffAll)):
+                        z_mol = dataset.getElements(mol_idx)
+                        mol_idxs = np.argwhere(z_mol == i).flatten()
+                        if len(mol_idxs) > 0:
+                            diff_list.append(diffAll[mol_idx][mol_idxs].flatten())
 
-                diff = diff.reshape(diff.shape[0], -1)
-                mae = np.mean(np.abs(diff))
-                rmse = np.sqrt(np.mean(diff ** 2))
+                    if len(diff_list) == 0:
+                        # No atoms of this type found
+                        continue
+
+                    diff = np.concatenate(diff_list)
+                    mae = np.mean(np.abs(diff))
+                    rmse = np.sqrt(np.mean(diff ** 2))
+                else:
+                    # Uniform dataset: diffAll is (N, M, 3) array
+                    diff = diffAll[:, idxs, :]
+                    diff = diff.reshape(diff.shape[0], -1)
+                    mae = np.mean(np.abs(diff))
+                    rmse = np.sqrt(np.mean(diff ** 2))
 
                 out[zIntToZStr[i]] = {"mae": mae, "rmse": rmse}
 

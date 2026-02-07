@@ -168,6 +168,9 @@ def addSettings(UIHandler, loupe):
     settings.addAction(
         "clearBondProperty", partial(loupeClearBondProperty, loupe)
     )
+    # Note: bondType default is "Fixed", but Loupe.setDataset() will auto-set:
+    #   - "Fixed" for uniform datasets (same chemical composition)
+    #   - "Dynamic" for variable datasets (different molecule sizes)
     settings.addParameters(
         **{
             "bondType": ["Fixed", "updateGeometry"],

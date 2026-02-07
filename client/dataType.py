@@ -55,7 +55,15 @@ class SubDataEntity(DataEntity):
         self.data = parent.data
 
     def get(self, key=None):
-        return self.parent.get(key=key)[self.indices]
+        data = self.parent.get(key=key)
+
+        # Handle variable datasets (list of arrays)
+        if isinstance(data, list):
+            # For lists, use list comprehension to select indices
+            return [data[i] for i in self.indices]
+        else:
+            # For numpy arrays, use array indexing
+            return data[self.indices]
 
 
 class AtomFilteredEntity(DataEntity):

@@ -48,6 +48,13 @@ class sGDMLModelLoader(ModelLoader):
             F (array): NxMx3 array containing calculated forces.
         """
 
+        # sGDML requires uniform molecular structures
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            raise ValueError(
+                "sGDML models require uniform molecular structures. "
+                "This dataset contains variable-sized molecules (different number of atoms per configuration)."
+            )
+
         if indices is None:
             R = dataset.getCoordinates()
         else:
