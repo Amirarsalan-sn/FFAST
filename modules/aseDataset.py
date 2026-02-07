@@ -43,6 +43,18 @@ class aseDatasetLoader(DatasetLoader):
 
         return forcekeys
 
+    def EneregyKeys(self):
+        exAtoms = self.atomsList[0]
+        num_key = 0
+        energykeys = []
+        for key in exAtoms.info.keys():
+            if "energy" in key.lower():
+                logger.debug(f"Found energy in array '{key}' for index 0.")
+                num_key += 1
+                energykeys.append(key)
+
+        return energykeys
+
     def getN(self):
         return self.N
 
@@ -67,15 +79,27 @@ class aseDatasetLoader(DatasetLoader):
 
     def getEnergies(self, indices=None):
         # probably should just do it once at the start and save it as np arrays?
-        if indices is None:
-            indices = np.arange(self.N)
-        elif not isinstance(indices, Iterable):
-            return self.atomsList[indices].get_potential_energy()
+        keys = self.EneregyKeys()
+        if len(keys) == 0:
+            if indices is None:
+                indices = np.arange(self.N)
+            elif not isinstance(indices, Iterable):
+                return self.atomsList[indices].get_potential_energy()
 
-        R = []
-        for idx in indices:
-            R.append(self.atomsList[idx].get_potential_energy())
+            R = []
+            for idx in indices:
+                R.append(self.atomsList[idx].get_potential_energy())
+        else:
+            key = keys[0]
+            logger.info(f"Using energies from array(s) {key} out of {keys}.")
+            if indices is None:
+                indices = np.arange(self.N)
+            elif not isinstance(indices, Iterable):
+                return self.atomsList[indices].info[key]
 
+            R = []
+            for idx in indices:
+                R.append(self.atomsList[idx].info[key])
         return np.array(R)
 
     def getForces(self, indices=None):
