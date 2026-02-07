@@ -32,7 +32,8 @@ def exportImagePIL(loupe, transparent=False, format="png"):
     filter_str = "PNG Files (*.png)" #if format == "png" else "JPEG Files (*.jpg *.jpeg)"
     default_ext = ".png" #if format == "png" else ".jpg"
     workdir = loupe.handler.workdir
-    default_filename = os.path.join(workdir, f"loupe_frame_{loupe.index}{default_ext}")
+    dataset_name = loupe.canvas.dataset.getName()
+    default_filename = os.path.join(workdir, f"{dataset_name}_frame_{loupe.index}{default_ext}")
 
     file_path, _ = QFileDialog.getSaveFileName(
         loupe,
@@ -118,90 +119,90 @@ def exportImagePIL(loupe, transparent=False, format="png"):
         loupe.canvas.visualRefresh(force=True)
 
 
-def exportImageVispy(loupe, transparent=False):
-    """Export using native Vispy method.
+# def exportImageVispy(loupe, transparent=False):
+    # """Export using native Vispy method.
 
-    Args:
-        loupe: The Loupe instance
-        transparent: If True, use transparent background
-    """
-    import vispy.io as io
+    # Args:
+    #     loupe: The Loupe instance
+    #     transparent: If True, use transparent background
+    # """
+    # import vispy.io as io
 
-    canvas = loupe.canvas.canvas
-    settings = loupe.settings
+    # canvas = loupe.canvas.canvas
+    # settings = loupe.settings
 
+    # # Get file path from user
+    # workdir = loupe.handler.workdir
+    # dataset_name = loupe.canvas.dataset.getName()
+    # default_filename = os.path.join(workdir, f"{dataset_name}_frame_{loupe.index}.png")
 
-    # Get file path from user
-    workdir = loupe.handler.workdir
-    default_filename = os.path.join(workdir, f"loupe_frame_{loupe.index}.png")
+    # file_path, _ = QFileDialog.getSaveFileName(
+    #     loupe,
+    #     "Save Image (Vispy Native)",
+    #     default_filename,
+    #     "PNG Files (*.png)"
+    # )
 
-    file_path, _ = QFileDialog.getSaveFileName(
-        loupe,
-        "Save Image (Vispy Native)",
-        default_filename,
-        "PNG Files (*.png)"
-    )
+    # if not file_path:
+    #     return  # User cancelled
 
-    if not file_path:
-        return  # User cancelled
+    # # Save original size and background
+    # original_size = canvas.size
+    # original_bgcolor = canvas.bgcolor
 
-    # Save original size and background
-    original_size = canvas.size
-    original_bgcolor = canvas.bgcolor
+    # try:
+    #     # Scale canvas size if needed
+    #     # if scale_factor > 1:
+    #     #     new_size = (original_size[0] * scale_factor, original_size[1] * scale_factor)
+    #     #     canvas.size = new_size
+    #     #     canvas.update()
 
-    try:
-        # Scale canvas size if needed
-        # if scale_factor > 1:
-        #     new_size = (original_size[0] * scale_factor, original_size[1] * scale_factor)
-        #     canvas.size = new_size
-        #     canvas.update()
+    #     # Set background color based on export type
+    #     if transparent:
+    #         # For transparent exports, render with black background then make it transparent
+    #         # (workaround for Vispy Line visuals not rendering with transparent bgcolor)
+    #         canvas.bgcolor = (0, 0, 0, 1)  # Black opaque background
+    #         canvas.update()
+    #     else:
+    #         # For opaque exports, use the selected background color
+    #         bg_rgb = settings.get("exportBackgroundColor")
+    #         canvas.bgcolor = (bg_rgb[0] / 255.0, bg_rgb[1] / 255.0, bg_rgb[2] / 255.0, 1)
+    #         canvas.update()
 
-        # Set background color based on export type
-        if transparent:
-            # For transparent exports, render with black background then make it transparent
-            # (workaround for Vispy Line visuals not rendering with transparent bgcolor)
-            canvas.bgcolor = (0, 0, 0, 1)  # Black opaque background
-            canvas.update()
-        else:
-            # For opaque exports, use the selected background color
-            bg_rgb = settings.get("exportBackgroundColor")
-            canvas.bgcolor = (bg_rgb[0] / 255.0, bg_rgb[1] / 255.0, bg_rgb[2] / 255.0, 1)
-            canvas.update()
+    #     # Force complete geometry update to regenerate all properties and visuals
+    #     loupe.canvas.onNewGeometry()
 
-        # Force complete geometry update to regenerate all properties and visuals
-        loupe.canvas.onNewGeometry()
+    #     # Additional update to ensure canvas processes all changes
+    #     canvas.update()
 
-        # Additional update to ensure canvas processes all changes
-        canvas.update()
+    #     # Process pending events to ensure all updates are applied
+    #     from PySide6.QtWidgets import QApplication
+    #     QApplication.processEvents()
 
-        # Process pending events to ensure all updates are applied
-        from PySide6.QtWidgets import QApplication
-        QApplication.processEvents()
+    #     # Do a priming render to ensure graphics pipeline is ready
+    #     _ = canvas.render()
 
-        # Do a priming render to ensure graphics pipeline is ready
-        _ = canvas.render()
+    #     # Final render for export
+    #     img_array = canvas.render()
 
-        # Final render for export
-        img_array = canvas.render()
+    #     # Make background transparent if requested
+    #     if transparent:
+    #         # Make black pixels (background) transparent
+    #         # Black is (0, 0, 0) with some tolerance for antialiasing
+    #         black_pixels = (img_array[:, :, 0] < 5) & (img_array[:, :, 1] < 5) & (img_array[:, :, 2] < 5)
+    #         img_array[black_pixels, 3] = 0  # Set alpha to 0 for black pixels
 
-        # Make background transparent if requested
-        if transparent:
-            # Make black pixels (background) transparent
-            # Black is (0, 0, 0) with some tolerance for antialiasing
-            black_pixels = (img_array[:, :, 0] < 5) & (img_array[:, :, 1] < 5) & (img_array[:, :, 2] < 5)
-            img_array[black_pixels, 3] = 0  # Set alpha to 0 for black pixels
+    #     io.write_png(file_path, img_array)
 
-        io.write_png(file_path, img_array)
+    #     logger.info(f"Image saved (Vispy) to: {file_path} [Size: {canvas.size}]")
 
-        logger.info(f"Image saved (Vispy) to: {file_path} [Size: {canvas.size}]")
-
-    finally:
-        # Restore original size and background
-        canvas.size = original_size
-        canvas.bgcolor = original_bgcolor
-        canvas.update()
-        # Restore visual elements
-        loupe.canvas.visualRefresh(force=True)
+    # finally:
+    #     # Restore original size and background
+    #     canvas.size = original_size
+    #     canvas.bgcolor = original_bgcolor
+    #     canvas.update()
+    #     # Restore visual elements
+    #     loupe.canvas.visualRefresh(force=True)
 
 
 # PIL Export functions
