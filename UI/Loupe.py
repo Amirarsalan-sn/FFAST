@@ -295,7 +295,22 @@ class InteractiveCanvas(Widget):
     def setDataset(self, dataset):
         self.hasBeenInited = False
         self.dataset = dataset
-        self.nAtoms = self.dataset.getNAtoms()
+
+        # Get atom count for current index (important for variable datasets)
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # Use current index if it exists, otherwise default to 0 (first geometry)
+            index = self.index if hasattr(self, 'index') else 0
+            self.nAtoms = dataset.getNAtoms(index)
+        else:
+            self.nAtoms = dataset.getNAtoms()
+
+        # Auto-set bond type based on dataset composition
+        # Variable datasets (different molecule sizes) → Dynamic bonds
+        # Uniform datasets (same molecule size) → Fixed bonds
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            self.loupe.settings.setParameter("bondType", "Dynamic", refresh=False)
+        else:
+            self.loupe.settings.setParameter("bondType", "Fixed", refresh=False)
 
         for prop in self.props.values():
             prop.onDatasetInit()
@@ -307,7 +322,9 @@ class InteractiveCanvas(Widget):
         self.hasBeenInited = True
         self.visualRefresh()
         # self.onNewGeometry()
-        self.canvas.refreshPickingColors(self.dataset.getNAtoms())
+
+        # Refresh picking colors (use nAtoms which is index-specific for variable datasets)
+        self.canvas.refreshPickingColors(self.nAtoms)
 
     def size(self):
         return self.canvas.size
@@ -345,7 +362,25 @@ class InteractiveCanvas(Widget):
         if self.dataset is None:
             return
         index = min(index, self.dataset.getN() - 1)
-        self.index = index
+
+        # Check if atom count changed (for variable datasets)
+        if hasattr(self.dataset, 'isVariable') and self.dataset.isVariable:
+            new_nAtoms = self.dataset.getNAtoms(index)
+
+            # Check if this is not the first call and atom count changed
+            if hasattr(self, 'index'):
+                old_nAtoms = self.dataset.getNAtoms(self.index)
+                if old_nAtoms != new_nAtoms:
+                    # Atom count changed - refresh picking colors
+                    self.canvas.refreshPickingColors(new_nAtoms)
+                    # Update parent widget's nAtoms
+                    if hasattr(self.loupe, 'nAtoms'):
+                        self.loupe.nAtoms = new_nAtoms
+
+            self.index = index
+        else:
+            self.index = index
+
         self.onNewGeometry()
 
     def resetCurrentR(self):

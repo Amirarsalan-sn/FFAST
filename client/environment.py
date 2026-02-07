@@ -166,7 +166,23 @@ class Environment(EventClass):
             d = np.load(path, allow_pickle=True)
             E, F = d["E"], d["F"]
         else:
-            aseObject = aseDatasetLoader(path)
+            # Use smart loader to detect uniform vs variable datasets
+            import ase.io
+            from modules.aseDataset import aseDatasetLoader, VariableASEDatasetLoader
+
+            # Read once to detect type
+            atomsList = ase.io.read(path, index=":")
+            atom_counts = [len(atoms) for atoms in atomsList]
+
+            if len(set(atom_counts)) == 1:
+                # Uniform dataset
+                logger.info(f"Loading prepredicted data as uniform ASE dataset: {len(atomsList)} molecules, {atom_counts[0]} atoms each")
+                aseObject = aseDatasetLoader(path)
+            else:
+                # Variable dataset
+                logger.info(f"Loading prepredicted data as variable ASE dataset: {len(atomsList)} molecules, {min(atom_counts)}-{max(atom_counts)} atoms")
+                aseObject = VariableASEDatasetLoader(path)
+
             E = aseObject.getEnergies()
             F = aseObject.getForces()
 

@@ -129,7 +129,14 @@ def md5FromArraysAndStrings(*args):
         elif isinstance(arg, np.ndarray):
             d = arg.ravel()
         elif isinstance(arg, list):
-            d = np.array(arg).ravel()
+            # Handle list of arrays (variable-sized datasets)
+            # Check if list contains numpy arrays
+            if len(arg) > 0 and isinstance(arg[0], np.ndarray):
+                # Flatten each array and concatenate
+                d = np.concatenate([a.ravel() for a in arg])
+            else:
+                # Regular list - try to convert to array
+                d = np.array(arg).ravel()
 
         fp.update(hashlib.md5(d).digest())
 

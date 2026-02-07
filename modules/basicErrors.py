@@ -10,6 +10,24 @@ DEPENDENCIES = []
 
 
 def loadData(env):
+    # Helper function for variable dataset indexing
+    def flatIndexToConfigIndex(flat_indices, dataset):
+        """
+        Convert flat force component indices to configuration indices.
+
+        For uniform datasets: uses simple division
+        For variable datasets: uses molecule_offsets with searchsorted
+        """
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # Variable: use offsets
+            offsets = dataset.molecule_offsets * 3  # 3 components per atom
+            config_indices = np.searchsorted(offsets[1:], flat_indices, side='right')
+            return np.unique(config_indices)
+        else:
+            # Uniform: simple division
+            nAtoms = dataset.getNAtoms()
+            return np.unique(flat_indices // (nAtoms * 3))
+
     class EnergyPredictionError(DataType):
         modelDependent = True
         datasetDependent = True
@@ -50,13 +68,19 @@ def loadData(env):
             fPred = env.getData("forces", model=model, dataset=dataset)
             fData = dataset.getForces()
 
-            diff = fPred.get("forces") - fData
-            # atomicMAE = np.mean(np.abs(diff), axis=2)
-            # mae = np.mean(np.abs(diff))
-            # rmse = np.sqrt(np.mean(diff ** 2))
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                # Variable dataset: fPred and fData are lists
+                fPred_forces = fPred.get("forces")
+                diff_list = []
+                for i in range(len(fData)):
+                    diff_list.append(fPred_forces[i] - fData[i])
+                diff = diff_list
+            else:
+                # Uniform dataset: numpy arrays
+                diff = fPred.get("forces") - fData
 
             de = self.newDataEntity(
-                diff=diff  # atomicMAE=atomicMAE, mae=mae, rmse=rmse
+                diff=diff
             )
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
@@ -79,16 +103,30 @@ def loadData(env):
             diff = np.abs(eErr.get("diff"))
             diff = np.concatenate([diff, -diff])
 
-            kde = gaussian_kde(diff)
+            # Check if data has sufficient variance for KDE
+            if np.std(diff) < 1e-10:
+                # Zero or near-zero variance: create simple distribution
+                distX = np.linspace(
+                    0,
+                    max(np.max(diff), 1e-10),
+                    getConfig("plotDistNum"),
+                )
+                # Delta function approximation at mean value
+                distY = np.zeros_like(distX)
+                closest_idx = np.argmin(np.abs(distX - np.mean(diff)))
+                distY[closest_idx] = 1.0
+            else:
+                # Normal KDE calculation
+                kde = gaussian_kde(diff)
 
-            delta = np.max(diff) - 0
+                delta = np.max(diff) - 0
 
-            distX = np.linspace(
-                0,
-                np.max(diff) + 0.05 * delta,
-                getConfig("plotDistNum"),
-            )
-            distY = kde(distX)
+                distX = np.linspace(
+                    0,
+                    np.max(diff) + 0.05 * delta,
+                    getConfig("plotDistNum"),
+                )
+                distY = kde(distX)
 
             de = self.newDataEntity(distY=distY, distX=distX)
             env.setData(de, self.key, model=model, dataset=dataset)
@@ -108,22 +146,48 @@ def loadData(env):
             env = self.env
 
             err = env.getData("forcesError", model=model, dataset=dataset)
+            diff = err.get("diff")
 
-            diff = np.abs(err.get("diff"))
-            diff = diff.reshape(diff.shape[0], -1)
-            mae = np.mean(np.abs(diff), axis=1)
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                # Variable dataset: diff is list of arrays
+                # Flatten each molecule's diff and compute MAE per molecule
+                mae_list = []
+                for diff_mol in diff:
+                    diff_flat = np.abs(diff_mol).reshape(-1)
+                    mae_list.append(np.mean(diff_flat))
+                mae = np.array(mae_list)
+            else:
+                # Uniform dataset: diff is (N, M, 3) array
+                diff = np.abs(diff)
+                diff = diff.reshape(diff.shape[0], -1)
+                mae = np.mean(diff, axis=1)
+
+            # Mirror for symmetric distribution
             mae = np.concatenate([-np.abs(mae), np.abs(mae)])
 
-            kde = gaussian_kde(mae)
+            # Check if data has sufficient variance for KDE
+            if np.std(mae) < 1e-10:
+                # Zero or near-zero variance: create simple distribution
+                distX = np.linspace(
+                    0,
+                    max(np.max(mae), 1e-10),
+                    getConfig("plotDistNum"),
+                )
+                # Delta function approximation at mean value
+                distY = np.zeros_like(distX)
+                closest_idx = np.argmin(np.abs(distX - np.mean(mae)))
+                distY[closest_idx] = 1.0
+            else:
+                # Normal KDE calculation
+                kde = gaussian_kde(mae)
+                delta = np.max(mae) - 0
 
-            delta = np.max(mae) - 0
-
-            distX = np.linspace(
-                0,
-                np.max(mae) + delta * 0.05,
-                getConfig("plotDistNum"),
-            )
-            distY = kde(distX)
+                distX = np.linspace(
+                    0,
+                    np.max(mae) + delta * 0.05,
+                    getConfig("plotDistNum"),
+                )
+                distY = kde(distX)
 
             de = self.newDataEntity(distY=distY, distX=distX)
             env.setData(de, self.key, model=model, dataset=dataset)
@@ -166,13 +230,30 @@ def loadData(env):
             env = self.env
 
             err = env.getData("forcesError", model=model, dataset=dataset)
+            diff = err.get("diff")
 
-            diff = np.abs(err.get("diff"))
-            atomicMAE = np.mean(np.abs(diff), axis=2)
-            mae = np.mean(np.abs(diff))
-            rmse = np.sqrt(np.mean(diff ** 2))
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                # Variable dataset: diff is list of arrays
+                atomicMAE_list = []
+                for diff_mol in diff:
+                    # Per-atom MAE for this molecule: (n_atoms_i,)
+                    atomicMAE_list.append(np.mean(np.abs(diff_mol), axis=1))
 
-            de = self.newDataEntity(atomicMAE=atomicMAE, mae=mae, rmse=rmse)
+                # Global metrics: concatenate all
+                diff_flat = np.vstack(diff)  # (total_atoms, 3)
+                mae = np.mean(np.abs(diff_flat))
+                rmse = np.sqrt(np.mean(diff_flat ** 2))
+
+                de = self.newDataEntity(atomicMAE=atomicMAE_list, mae=mae, rmse=rmse)
+            else:
+                # Uniform dataset: diff is (N, M, 3) array
+                diff = np.abs(diff)
+                atomicMAE = np.mean(diff, axis=2)  # (N, M)
+                mae = np.mean(diff)
+                rmse = np.sqrt(np.mean(diff ** 2))
+
+                de = self.newDataEntity(atomicMAE=atomicMAE, mae=mae, rmse=rmse)
+
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
 
@@ -259,13 +340,23 @@ def loadUI(UIHandler, env):
             x0, x1 = xRange
 
             err = env.getData("forcesError", model=model, dataset=dataset)
-            diff = np.abs(err.get("diff"))
-            nConf = diff.shape[0]
-            diff = diff.reshape(-1)
-            nAtoms = dataset.getNAtoms()
+            diff = err.get("diff")
 
-            idxs = np.argwhere((diff >= x0) & (diff <= x1))
-            idxs = np.unique(idxs // (nAtoms * 3))
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                # Variable dataset: diff is list of arrays
+                diff_flat = np.concatenate([np.abs(d).reshape(-1) for d in diff])
+                idxs_flat = np.argwhere((diff_flat >= x0) & (diff_flat <= x1)).flatten()
+
+                # Convert flat indices to config indices using helper
+                idxs = flatIndexToConfigIndex(idxs_flat, dataset)
+            else:
+                # Uniform dataset: diff is numpy array
+                diff = np.abs(diff)
+                nConf = diff.shape[0]
+                diff = diff.reshape(-1)
+
+                idxs = np.argwhere((diff >= x0) & (diff <= x1))
+                idxs = flatIndexToConfigIndex(idxs, dataset)
 
             return idxs
 
@@ -346,8 +437,17 @@ def loadUI(UIHandler, env):
             smoothing = self.smoothing
             for data in self.getWatchedData():
                 err = data["dataEntry"].get("diff")
-                mae = err.reshape(err.shape[0], -1)
-                mae = np.mean(np.abs(mae), axis=1)
+
+                # Handle variable vs uniform datasets
+                if isinstance(err, list):
+                    # Variable dataset: err is list of arrays
+                    mae = np.array([np.mean(np.abs(e)) for e in err])
+                else:
+                    # Uniform dataset: err is (N, M, 3) array
+                    mae = err.reshape(err.shape[0], -1)
+                    mae = np.mean(np.abs(mae), axis=1)
+
+                # Apply smoothing
                 mae = np.convolve(
                     mae, np.ones(smoothing) / smoothing, mode="valid"
                 )

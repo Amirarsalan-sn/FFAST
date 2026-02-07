@@ -27,14 +27,32 @@ class AtomsElement(VisualElement):
         # self.colors = (1,1,1)
 
     def onDatasetInit(self):
-        z = self.canvas.dataset.getElements()
-        self.elementColors = (
-            atomColors[z] / 255 * getConfig("loupeAtomColorDimming")
-        )
-        self.sizes = covalentRadii[z]
+        dataset = self.canvas.dataset
+
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # For variable datasets, colors/sizes will be computed per-geometry
+            self.elementColors = None
+            self.sizes = None
+        else:
+            # For uniform datasets, cache colors and sizes
+            z = dataset.getElements()
+            self.elementColors = (
+                atomColors[z] / 255 * getConfig("loupeAtomColorDimming")
+            )
+            self.sizes = covalentRadii[z]
 
     def onNewGeometry(self):
         R = self.canvas.getCurrentR()
+        dataset = self.canvas.dataset
+
+        # For variable datasets, recompute colors and sizes per-geometry
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            z = dataset.getElements(self.canvas.index)
+            self.elementColors = (
+                atomColors[z] / 255 * getConfig("loupeAtomColorDimming")
+            )
+            self.sizes = covalentRadii[z]
+
         self.pos = R
         self.queueVisualRefresh()
 
@@ -83,11 +101,25 @@ class AtomsHoverElement(VisualElement):
         super().__init__(*args, **kwargs, singleElement=self.scatter)
 
     def onDatasetInit(self):
-        z = self.canvas.dataset.getElements()
-        self.sizes = covalentRadii[z]
+        dataset = self.canvas.dataset
+
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # For variable datasets, sizes will be computed per-geometry
+            self.sizes = None
+        else:
+            # For uniform datasets, cache sizes
+            z = dataset.getElements()
+            self.sizes = covalentRadii[z]
 
     def onNewGeometry(self):
         R = self.canvas.getCurrentR()
+        dataset = self.canvas.dataset
+
+        # For variable datasets, recompute sizes per-geometry
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            z = dataset.getElements(self.canvas.index)
+            self.sizes = covalentRadii[z]
+
         self.pos = R
         self.queueVisualRefresh()
 
@@ -128,11 +160,25 @@ class AtomsSelectedElement(VisualElement):
         super().__init__(*args, **kwargs, singleElement=self.scatter)
 
     def onDatasetInit(self):
-        z = self.canvas.dataset.getElements()
-        self.sizes = covalentRadii[z]
+        dataset = self.canvas.dataset
+
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # For variable datasets, sizes will be computed per-geometry
+            self.sizes = None
+        else:
+            # For uniform datasets, cache sizes
+            z = dataset.getElements()
+            self.sizes = covalentRadii[z]
 
     def onNewGeometry(self):
         R = self.canvas.getCurrentR()
+        dataset = self.canvas.dataset
+
+        # For variable datasets, recompute sizes per-geometry
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            z = dataset.getElements(self.canvas.index)
+            self.sizes = covalentRadii[z]
+
         self.pos = R
         self.queueVisualRefresh()
 

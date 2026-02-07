@@ -141,16 +141,34 @@ class ForceErrorColorProperty(CanvasProperty):
         atomicMAE = de.get("atomicMAE")
         if atomicMAE is None:
             return
-        meanAtomicMAE = np.mean(atomicMAE, axis=0)
-        perc = getConfig("loupeForceErrorPercentile") * 100
+
+        # Handle variable vs uniform datasets
+        if isinstance(atomicMAE, list):
+            # Variable dataset: atomicMAE is list of arrays with different shapes
+            # Compute global statistics by flattening all arrays
+            atomicMAE_flat = np.concatenate([mae.flatten() for mae in atomicMAE])
+            perc = getConfig("loupeForceErrorPercentile") * 100
+            max_val = np.percentile(atomicMAE_flat, perc)
+
+            # For meanAtomicMAE, use global mean (scalar)
+            meanAtomicMAE = np.mean(atomicMAE_flat)
+            meanMin = meanAtomicMAE  # Same value for variable datasets
+            meanMax = meanAtomicMAE
+        else:
+            # Uniform dataset: original behavior
+            meanAtomicMAE = np.mean(atomicMAE, axis=0)
+            perc = getConfig("loupeForceErrorPercentile") * 100
+            max_val = np.percentile(atomicMAE, perc)
+            meanMin = np.min(meanAtomicMAE)
+            meanMax = np.max(meanAtomicMAE)
 
         self.set(
             atomicMAE=atomicMAE,
             meanAtomicMAE=meanAtomicMAE,
             min=0,
-            max=np.percentile(atomicMAE, perc),
-            meanMin=np.min(meanAtomicMAE),
-            meanMax=np.max(meanAtomicMAE),
+            max=max_val,
+            meanMin=meanMin,
+            meanMax=meanMax,
             isZeroModel=data[0]["model"].fingerprint == "zeroModel",
         )
 

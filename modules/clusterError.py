@@ -129,6 +129,11 @@ def loadData(env):
         def data(self, dataset=None, model=None, taskID=None):
             env = self.env
 
+            # Check if variable dataset - clustering not yet supported
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                logger.info("Dataset clustering is not yet supported for variable-sized datasets. Skipping cluster calculation.")
+                return None
+
             schemes = getConfig("clusterScheme")
             clinds = [np.arange(dataset.getN())]
             for s in schemes:
@@ -162,12 +167,26 @@ def loadData(env):
             env = self.env
 
             err = env.getData("forcesError", model=model, dataset=dataset)
-            diff = np.abs(err.get("diff"))
-            diff = diff.reshape(diff.shape[0], -1)
-            mae = np.abs(diff)
 
-            clind = env.getData("datasetCluster", dataset=dataset)
-            clind = clind.get("clind")
+            # Check if clustering data is available
+            clind_data = env.getData("datasetCluster", dataset=dataset)
+            if clind_data is None:
+                logger.info("No cluster data available. Skipping cluster force error calculation.")
+                return None
+
+            diff = np.abs(err.get("diff"))
+
+            # Handle variable vs uniform datasets
+            if isinstance(diff, list):
+                # Variable dataset - flatten all diffs
+                diff = np.concatenate([d.flatten() for d in diff])
+                mae = np.abs(diff)
+            else:
+                # Uniform dataset
+                diff = diff.reshape(diff.shape[0], -1)
+                mae = np.abs(diff)
+
+            clind = clind_data.get("clind")
 
             clerr = []
             for x in clind:
@@ -190,12 +209,18 @@ def loadData(env):
             env = self.env
 
             err = env.getData("energyError", model=model, dataset=dataset)
+
+            # Check if clustering data is available
+            clind_data = env.getData("datasetCluster", dataset=dataset)
+            if clind_data is None:
+                logger.info("No cluster data available. Skipping cluster energy error calculation.")
+                return None
+
             diff = np.abs(err.get("diff"))
             diff = diff.reshape(diff.shape[0], -1)
             mae = np.abs(diff)
 
-            clind = env.getData("datasetCluster", dataset=dataset)
-            clind = clind.get("clind")
+            clind = clind_data.get("clind")
 
             clerr = []
             for x in clind:
