@@ -1541,6 +1541,9 @@ class SettingsLineEdit(SettingsWidgetBase):
             val = QtGui.QDoubleValidator(
                 nMin, nMax, 4, notation=QtGui.QDoubleValidator.StandardNotation
             )
+            # Set locale to C (uses period as decimal separator)
+            from PySide6.QtCore import QLocale
+            val.setLocale(QLocale.c())
             self.lineEdit.setValidator(val)
 
         self.setDefault()
@@ -1551,6 +1554,7 @@ class SettingsLineEdit(SettingsWidgetBase):
     def _getValue(self):
         t = self.lineEdit.text()
         if self.isFloat:
+            logging.info(f"Getting float value {t} from SettingsLineEdit {self}")
             return float(t)
         elif self.isInt:
             return int(t)
