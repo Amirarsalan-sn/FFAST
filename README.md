@@ -18,9 +18,15 @@ While inside the main folder and the appropriate python environment, simply run:
 
 `python main.py`
 
+You can optionally specify a working directory for file dialogs:
+
+`python main.py --workdir /path/to/your/data`
+
+This sets the default directory that will be used when opening file dialogs for loading datasets, models, and saving outputs. If not specified, the current directory is used.
+
 ### Models
 
-Currently only sGDML, SchNet, MACE, Nequip and SpookyNet are _fully_ implemented. You can however also load prepredicted energies and forces in the "Models" menu. The format for this is simple: create a .npz file with energies under the "E" key and forces under the "F" key (same as sGDML npz datasets). You can then load this .npz file under "Model"->"Load prepredicted": note that this pre-predicted model needs to be loaded relative to an already loaded dataset (see bottom tab when loading prepredicted model).
+Currently only sGDML, SchNet, MACE, Nequip and SpookyNet are _fully_ implemented. You can however also load prediction energies and forces in the "Models" menu. The format for this is simple: create a .npz file with energies under the "E" key and forces under the "F" key (same as sGDML npz datasets). You can then load this .npz file under "Model"->"Load Prediction": note that this predicted dataset needs to be loaded relative to an already loaded dataset (see bottom tab when loading prediction dataset).
 
 ### Datasets
 
@@ -42,6 +48,6 @@ Sub-datasets, e.g. zoomed-in plots, can also be displayed in a loupe by toggling
 
 Four example models with pre-computed forces and energies are provided to immediately experiment with the tools. First, the datasets have to be loaded from the original source (http://www.sgdml.org/#datasets). The two datasets we focus on are the MD22 Docosahexaenoic acid and MD22 Stachyose and are available to be downloaded as npz files. 
 
-Open the software by running `python main.py`, then load one or both datasets of interest (File -> Load Dataset or `CMD-D`). Then load the pre-predicted model folders (File -> Load or `CMD-L`), namely `examples/MACE` and `examples/Nequip`. Assuming the original datasets are unchanged, the program will automatically realise the pre-predictions belong to the respective datasets that were just loaded.
+Open the software by running `python main.py`, then load one or both datasets of interest (File -> Load Dataset or `CMD-D`). Then load the predicted data folders (File -> Load or `CMD-L`), namely `examples/MACE` and `examples/Nequip`. Assuming the original datasets are unchanged, the program will automatically realise the pre-predictions belong to the respective datasets that were just loaded.
 
 Pre-release reference: https://arxiv.org/abs/2308.06871 
