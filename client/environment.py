@@ -112,6 +112,19 @@ class Environment(EventClass):
         if model is None:
             return
 
+        # Clean up all cached data for this model before deleting it
+        # Cache keys are in format: "dataTypeKey__modelFingerprint__datasetFingerprint"
+        cache_keys_to_delete = []
+        for cache_key in self.cache.keys():
+            parts = cache_key.split("__")
+            if len(parts) == 3 and parts[1] == key:
+                cache_keys_to_delete.append(cache_key)
+
+        # Delete all cached data for this model
+        for cache_key in cache_keys_to_delete:
+            del self.cache[cache_key]
+            logger.info(f"Deleted cached data: {cache_key}")
+
         model.onDelete()
         del self.models[key]
         logger.info(f"Model {key} deleted")
@@ -240,6 +253,19 @@ class Environment(EventClass):
         dataset = self.getDataset(key)
         if dataset is None:
             return
+
+        # Clean up all cached data for this dataset before deleting it
+        # Cache keys are in format: "dataTypeKey__modelFingerprint__datasetFingerprint"
+        cache_keys_to_delete = []
+        for cache_key in self.cache.keys():
+            parts = cache_key.split("__")
+            if len(parts) == 3 and parts[2] == key:
+                cache_keys_to_delete.append(cache_key)
+
+        # Delete all cached data for this dataset
+        for cache_key in cache_keys_to_delete:
+            del self.cache[cache_key]
+            logger.info(f"Deleted cached data: {cache_key}")
 
         dataset.onDelete()
         del self.datasets[key]
