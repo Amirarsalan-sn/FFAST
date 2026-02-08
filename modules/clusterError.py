@@ -132,7 +132,8 @@ def loadData(env):
             # Check if variable dataset - clustering not yet supported
             if hasattr(dataset, 'isVariable') and dataset.isVariable:
                 logger.info("Dataset clustering is not yet supported for variable-sized datasets. Skipping cluster calculation.")
-                return None
+                # Return True to signal task completion (prevents infinite retry loop)
+                return True
 
             schemes = getConfig("clusterScheme")
             clinds = [np.arange(dataset.getN())]
@@ -172,7 +173,8 @@ def loadData(env):
             clind_data = env.getData("datasetCluster", dataset=dataset)
             if clind_data is None:
                 logger.info("No cluster data available. Skipping cluster force error calculation.")
-                return None
+                # Return True to signal task completion (prevents infinite retry loop)
+                return True
 
             diff = np.abs(err.get("diff"))
 
@@ -214,7 +216,8 @@ def loadData(env):
             clind_data = env.getData("datasetCluster", dataset=dataset)
             if clind_data is None:
                 logger.info("No cluster data available. Skipping cluster energy error calculation.")
-                return None
+                # Return True to signal task completion (prevents infinite retry loop)
+                return True
 
             diff = np.abs(err.get("diff"))
             diff = diff.reshape(diff.shape[0], -1)
