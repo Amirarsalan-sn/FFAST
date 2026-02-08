@@ -139,7 +139,7 @@ class AtomsHoverElement(VisualElement):
 
         self.scatter.set_data(
             pos,
-            size=size,
+            size=10*size,
             edge_width=0.12,
             edge_color=getConfig("loupeHoverColor"),
             face_color="#00000000",
@@ -201,7 +201,7 @@ class AtomsSelectedElement(VisualElement):
 
         self.scatter.set_data(
             pos,
-            size=size,
+            size=10*size,
             edge_width=0.12,
             edge_color=getConfig("loupeSelectColor"),
             face_color="#00000000",
