@@ -103,6 +103,10 @@ class SceneCanvas(scene.SceneCanvas):
         return idx
 
     def getAtomIndicesInRectangle(self, pos0, pos1, refresh=False):
+        # NOTE: This uses pixel-based picking, so it only selects VISIBLE atoms.
+        # Atoms hidden behind other atoms will not be selected.
+        # This is standard behavior for most 3D visualization tools.
+
         img = self.getPickingRender(pos0, pos1)
         colors = img.reshape(-1, 4)
         colors = colors[colors[:, 2] == 255, :3]
