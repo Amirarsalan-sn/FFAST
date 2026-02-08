@@ -416,12 +416,12 @@ class SideBar(ContentBar):
     def setupContent(self):
 
         self.modelsList = ModelsObjectList(self.handler, parent=self)
-        self.addContent("MODELS", widget=self.modelsList)
-        self.setExpanded("MODELS")
+        self.addContent("PREDICTIONS/MODELS", widget=self.modelsList)
+        self.setExpanded("PREDICTIONS/MODELS")
 
         self.datasetsList = DatasetObjectList(self.handler, parent=self)
-        self.addContent("DATASETS", widget=self.datasetsList)
-        self.setExpanded("DATASETS")
+        self.addContent("REFERENCE DATASETS", widget=self.datasetsList)
+        self.setExpanded("REFERENCE DATASETS")
 
         self.tasksList = TasksList(self.handler, parent=self)
         self.addContent("TASKS", widget=self.tasksList)
