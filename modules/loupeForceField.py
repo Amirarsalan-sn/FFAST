@@ -84,7 +84,10 @@ class ForceVectorsElement(VisualElement):
         if width is None:
             width = 1
 
-        if self.pos is None:
+        # Check if force vectors should be shown
+        show = self.canvas.settings.get("showForceVectors")
+
+        if self.pos is None or not show:
             self.hide()
         else:
             self.show()
