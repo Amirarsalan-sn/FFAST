@@ -204,7 +204,12 @@ class DataType(EventClass):
         env = self.env
         generatableComps = []
 
-        comps = [env.getCacheKey(self.key, model=model, dataset=dataset)]
+        initialKey = env.getCacheKey(self.key, model=model, dataset=dataset)
+        if initialKey is None:
+            logger.warning(f"getCacheKey returned None for dataType={self.key}, model={model}, dataset={dataset}")
+            return []
+
+        comps = [initialKey]
 
         for i in range(100):
             # 100 instead of a while loop just to avoid crashing if infinite
@@ -216,6 +221,10 @@ class DataType(EventClass):
 
             newComps = []
             for compKey in comps:
+                # Skip None values that may have been added
+                if compKey is None:
+                    logger.warning(f"Skipping None compKey in getGeneratableComponent")
+                    continue
 
                 dt, m, d = env.cacheKeyToComponents(
                     compKey, dataTypeObject=True
@@ -226,7 +235,9 @@ class DataType(EventClass):
                     generatableComps.append((compKey))
                 else:
                     for dep in deps:
-                        newComps.append(dep)
+                        # Only append non-None dependencies
+                        if dep is not None:
+                            newComps.append(dep)
 
             if len(newComps) == 0:
                 break
