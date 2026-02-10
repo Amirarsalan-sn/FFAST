@@ -74,10 +74,14 @@ class AtomsElement(VisualElement):
 
         colors = self.getColors(picking, pickingColors)
 
+        # Apply size scale from settings
+        scale = self.canvas.settings.get("atomSizeScale", 1.0)
+        scaled_sizes = self.sizes * scale
+
         self.scatter.set_data(
             self.pos,
             face_color=colors,
-            size=self.sizes,
+            size=scaled_sizes,
             edge_width=0 if picking else self.edge_width,
             edge_color=getConfig("loupeBondsColor"),
         )
@@ -130,6 +134,7 @@ class AtomsHoverElement(VisualElement):
         if hover is not None:
             pos = np.array([self.pos[hover]])
             size = self.sizes[hover]
+            scale = self.canvas.settings.get("atomSizeScale", 1.0)
             if not self.scatter.visible:
                 self.scatter.visible = True
 
@@ -139,7 +144,7 @@ class AtomsHoverElement(VisualElement):
 
         self.scatter.set_data(
             pos,
-            size=10*size,
+            size=10*size*scale,
             edge_width=0.12,
             edge_color=getConfig("loupeHoverColor"),
             face_color="#00000000",
@@ -192,6 +197,7 @@ class AtomsSelectedElement(VisualElement):
         if selected is not None:
             pos = self.pos[selected]
             size = self.sizes[selected]
+            scale = self.canvas.settings.get("atomSizeScale", 1.0)
             if not self.scatter.visible:
                 self.scatter.visible = True
 
@@ -201,7 +207,7 @@ class AtomsSelectedElement(VisualElement):
 
         self.scatter.set_data(
             pos,
-            size=10*size,
+            size=10*size*scale,
             edge_width=0.12,
             edge_color=getConfig("loupeSelectColor"),
             face_color="#00000000",
@@ -215,8 +221,20 @@ def addAtomsObject(UIHandler, loupe):
 
 
 def addSettings(UIHandler, loupe):
+    from functools import partial
+
+    def updateAtomSize(loupe):
+        """Update atom size scale."""
+        atomsElement = loupe.canvas.elements.get("AtomsElement")
+        if atomsElement:
+            atomsElement.queueVisualRefresh()
+
     settings = loupe.settings
-    settings.addParameters(**{"atomColorType": ["Elements", "updateGeometry"]})
+    settings.addAction("updateAtomSize", partial(updateAtomSize, loupe))
+    settings.addParameters(**{
+        "atomColorType": ["Elements", "updateGeometry"],
+        "atomSizeScale": [1.0, "updateAtomSize", "visualRefresh"],
+    })
 
 
 def addSettingsPane(UIHandler, loupe):
