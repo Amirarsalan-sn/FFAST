@@ -21,6 +21,7 @@ class UIHandler(EventClass):
     loupeModules = []
     activeLoupe = None  # Currently active Loupe for menu actions
     workdir = None  # Working directory for file dialogs
+    energyShiftEnabled = False  # Global toggle for energy shift
 
     def __init__(self, *args, workdir=None, **kwargs):
         super().__init__(*args, **kwargs)

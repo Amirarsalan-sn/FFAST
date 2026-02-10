@@ -29,13 +29,30 @@ def loadUI(UIHandler, env):
             # since there's a maximum number of indices on a scatter plot
             # see "scatterPlotNPoints" in the config file
             self.indices = {}
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy Scatter (shifted)"
+                if shifted
+                else "Energy Scatter"
+            )
+            self.visualRefresh(force=True)
 
         def addPlots(self):
             self.indices.clear()
+            shifted = self.handler.energyShiftEnabled
             for data in self.getWatchedData():
 
                 predE = data["dataEntry"].get("energy")
                 trueE = data["dataset"].getEnergies()
+
+                if shifted:
+                    shift = np.mean(predE - trueE)
+                    predE = predE - shift
 
                 # this is a unique key for the model/dataset combination
                 # perfect for saving the indices below uniquely
