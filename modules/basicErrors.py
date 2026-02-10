@@ -46,8 +46,8 @@ def loadData(env):
             eData = dataset.getEnergies()
 
             diff = ePred.get("energy") - eData
-            mae = np.mean(np.abs(diff))
-            de = self.newDataEntity(diff=diff)  # , mae=mae)
+            shift = np.mean(diff)
+            de = self.newDataEntity(diff=diff, shift=shift)
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
 
@@ -95,40 +95,52 @@ def loadData(env):
         def __init__(self, *args):
             super().__init__(*args)
 
+        def _computeKDE(self, absDiff):
+            mirrored = np.concatenate([absDiff, -absDiff])
+            nPts = getConfig("plotDistNum")
+
+            if np.std(mirrored) < 1e-10:
+                distX = np.linspace(
+                    0,
+                    max(np.max(mirrored), 1e-10),
+                    nPts,
+                )
+                distY = np.zeros_like(distX)
+                closest_idx = np.argmin(
+                    np.abs(distX - np.mean(mirrored))
+                )
+                distY[closest_idx] = 1.0
+            else:
+                kde = gaussian_kde(mirrored)
+                delta = np.max(mirrored)
+                distX = np.linspace(
+                    0,
+                    np.max(mirrored) + 0.05 * delta,
+                    nPts,
+                )
+                distY = kde(distX)
+            return distX, distY
+
         def data(self, dataset=None, model=None, taskID=None):
             env = self.env
 
             eErr = env.getData("energyError", model=model, dataset=dataset)
+            rawDiff = eErr.get("diff")
+            shift = eErr.get("shift")
 
-            diff = np.abs(eErr.get("diff"))
-            diff = np.concatenate([diff, -diff])
+            # Unshifted KDE
+            distX, distY = self._computeKDE(np.abs(rawDiff))
 
-            # Check if data has sufficient variance for KDE
-            if np.std(diff) < 1e-10:
-                # Zero or near-zero variance: create simple distribution
-                distX = np.linspace(
-                    0,
-                    max(np.max(diff), 1e-10),
-                    getConfig("plotDistNum"),
-                )
-                # Delta function approximation at mean value
-                distY = np.zeros_like(distX)
-                closest_idx = np.argmin(np.abs(distX - np.mean(diff)))
-                distY[closest_idx] = 1.0
-            else:
-                # Normal KDE calculation
-                kde = gaussian_kde(diff)
+            # Shifted KDE
+            shiftedDiff = rawDiff - shift
+            sDistX, sDistY = self._computeKDE(np.abs(shiftedDiff))
 
-                delta = np.max(diff) - 0
-
-                distX = np.linspace(
-                    0,
-                    np.max(diff) + 0.05 * delta,
-                    getConfig("plotDistNum"),
-                )
-                distY = kde(distX)
-
-            de = self.newDataEntity(distY=distY, distX=distX)
+            de = self.newDataEntity(
+                distY=distY,
+                distX=distX,
+                shiftedDistX=sDistX,
+                shiftedDistY=sDistY,
+            )
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
 
@@ -208,11 +220,25 @@ def loadData(env):
 
             eErr = env.getData("energyError", model=model, dataset=dataset)
 
-            diff = np.abs(eErr.get("diff"))
-            mae = np.mean(np.abs(diff))
+            diff = eErr.get("diff")
+            shift = eErr.get("shift")
+
+            # Unshifted metrics
+            absDiff = np.abs(diff)
+            mae = np.mean(absDiff)
             rmse = np.sqrt(np.mean(diff ** 2))
 
-            de = self.newDataEntity(mae=mae, rmse=rmse)
+            # Shifted metrics
+            shiftedDiff = diff - shift
+            shiftedMae = np.mean(np.abs(shiftedDiff))
+            shiftedRmse = np.sqrt(np.mean(shiftedDiff ** 2))
+
+            de = self.newDataEntity(
+                mae=mae,
+                rmse=rmse,
+                shiftedMae=shiftedMae,
+                shiftedRmse=shiftedRmse,
+            )
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
 
@@ -269,9 +295,24 @@ def loadUI(UIHandler, env):
     from UI.ContentTab import ContentTab
     from UI.Plots import BasicPlotWidget, Table
     from UI.Templates import Slider, HorizontalContainerScrollArea
+    from PySide6.QtWidgets import QCheckBox
 
     ct = ContentTab(UIHandler)
     UIHandler.addContentTab(ct, "Basic Errors")
+
+    # Energy shift checkbox (global toggle)
+    shiftCheckBox = QCheckBox("Subtract mean energy offset")
+    shiftCheckBox.setToolTip(
+        "Remove constant energy offset by subtracting "
+        "mean(E_predicted - E_true) from all energy errors"
+    )
+
+    def onShiftToggled(state):
+        UIHandler.energyShiftEnabled = bool(state)
+        UIHandler.eventPush("ENERGY_SHIFT_CHANGED")
+
+    shiftCheckBox.stateChanged.connect(onShiftToggled)
+    ct.topLayout.addWidget(shiftCheckBox)
 
     # PLOTS
     class EnergyErrorDistPlot(BasicPlotWidget):
@@ -286,11 +327,29 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("energyErrorDist")
             self.setXLabel("Energy MAE", getConfig("energyUnit"))
             self.setYLabel("Density")
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy MAE distribution (shifted)"
+                if shifted
+                else "Energy MAE distribution"
+            )
+            self.visualRefresh(force=True)
 
         def addPlots(self):
+            shifted = self.handler.energyShiftEnabled
             for data in self.getWatchedData():
                 de = data["dataEntry"]
-                x, y = de.get("distX"), de.get("distY")
+                if shifted:
+                    x = de.get("shiftedDistX")
+                    y = de.get("shiftedDistY")
+                else:
+                    x = de.get("distX")
+                    y = de.get("distY")
                 self.plot(x, y, autoColor=data, autoLabel=data)
 
         def getDatasetSubIndices(self, dataset, model):
@@ -299,7 +358,10 @@ def loadUI(UIHandler, env):
             x0, x1 = xRange
 
             eErr = env.getData("energyError", model=model, dataset=dataset)
-            diff = np.abs(eErr.get("diff"))
+            diff = eErr.get("diff")
+            if self.handler.energyShiftEnabled:
+                diff = diff - eErr.get("shift")
+            diff = np.abs(diff)
 
             idxs = np.argwhere((diff >= x0) & (diff <= x1))
             idxs = np.unique(idxs)
@@ -380,6 +442,18 @@ def loadUI(UIHandler, env):
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
             self.slider.setCallbackFunc(self.updateSmoothing)
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy MAE timeline (shifted)"
+                if shifted
+                else "Energy MAE timeline"
+            )
+            self.visualRefresh(force=True)
 
         def updateSmoothing(self, value):
             self.smoothing = value
@@ -387,8 +461,12 @@ def loadUI(UIHandler, env):
 
         def addPlots(self):
             smoothing = self.smoothing
+            shifted = self.handler.energyShiftEnabled
             for data in self.getWatchedData():
-                err = data["dataEntry"].get("diff")
+                de = data["dataEntry"]
+                err = de.get("diff")
+                if shifted:
+                    err = err - de.get("shift")
                 err = np.convolve(
                     err, np.ones(smoothing) / smoothing, mode="valid"
                 )
@@ -511,6 +589,16 @@ def loadUI(UIHandler, env):
         def __init__(self):
             super().__init__(title="Energy MAE")
             self.setDataDependencies("energyErrorMetrics")
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy MAE (shifted)" if shifted else "Energy MAE"
+            )
+            self.visualRefresh()
 
         def getValue(self, i, j):
             env = self.handler.env
@@ -524,13 +612,23 @@ def loadUI(UIHandler, env):
 
             if de is None:
                 return ""
-            else:
-                return f"{de.get('mae'):.2f}"
+            key = "shiftedMae" if self.handler.energyShiftEnabled else "mae"
+            return f"{de.get(key):.2f}"
 
     class EnergyRMSETable(BaseTable):
         def __init__(self):
             super().__init__(title="Energy RMSE")
             self.setDataDependencies("energyErrorMetrics")
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy RMSE (shifted)" if shifted else "Energy RMSE"
+            )
+            self.visualRefresh()
 
         def getValue(self, i, j):
             env = self.handler.env
@@ -544,8 +642,10 @@ def loadUI(UIHandler, env):
 
             if de is None:
                 return ""
-            else:
-                return f"{de.get('rmse'):.2f}"
+            key = (
+                "shiftedRmse" if self.handler.energyShiftEnabled else "rmse"
+            )
+            return f"{de.get(key):.2f}"
 
     class ForcesMAETable(BaseTable):
         def __init__(self):

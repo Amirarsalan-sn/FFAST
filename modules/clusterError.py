@@ -216,20 +216,29 @@ def loadData(env):
             clind_data = env.getData("datasetCluster", dataset=dataset)
             if clind_data is None:
                 logger.info("No cluster data available. Skipping cluster energy error calculation.")
-                # Return True to signal task completion (prevents infinite retry loop)
                 return True
 
-            diff = np.abs(err.get("diff"))
-            diff = diff.reshape(diff.shape[0], -1)
-            mae = np.abs(diff)
+            rawDiff = err.get("diff")
+            shift = err.get("shift")
 
+            # Unshifted cluster errors
+            mae = np.abs(rawDiff).reshape(-1)
             clind = clind_data.get("clind")
 
             clerr = []
             for x in clind:
                 clerr.append(np.mean(mae[x]))
 
-            de = self.newDataEntity(clerr=np.array(clerr))
+            # Shifted cluster errors
+            shiftedMae = np.abs(rawDiff - shift).reshape(-1)
+            shiftedClerr = []
+            for x in clind:
+                shiftedClerr.append(np.mean(shiftedMae[x]))
+
+            de = self.newDataEntity(
+                clerr=np.array(clerr),
+                shiftedClerr=np.array(shiftedClerr),
+            )
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
 
@@ -277,6 +286,9 @@ def loadUI(UIHandler, env):
         currentN = -1
         modelOrder = {}
 
+        def getClerr(self, de):
+            return de.get("clerr")
+
         def addPlots(self):
             i = 0
             orderedModelKey = None
@@ -286,7 +298,7 @@ def loadUI(UIHandler, env):
             for x in self.getWatchedData():
                 de = x["dataEntry"]
                 model = x["model"]
-                clerr = de.get("clerr")
+                clerr = self.getClerr(de)
                 N = len(clerr)
                 self.currentN = max(self.currentN, N)
 
@@ -417,6 +429,23 @@ def loadUI(UIHandler, env):
 
             self.setDataDependencies("clusterEnergyError")
             self.setYLabel("Energy MAE", getConfig("energyUnit"))
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy Cluster Error (shifted)"
+                if shifted
+                else "Energy Cluster Error"
+            )
+            self.visualRefresh(force=True)
+
+        def getClerr(self, de):
+            if self.handler.energyShiftEnabled:
+                return de.get("shiftedClerr")
+            return de.get("clerr")
 
     ct = ContentTab(UIHandler)
     UIHandler.addContentTab(ct, "Cluster error")
