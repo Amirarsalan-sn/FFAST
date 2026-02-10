@@ -164,3 +164,4 @@ cython_debug/
 test2.py
 config/user.json
 CLAUDE.md
+.DS_Store
