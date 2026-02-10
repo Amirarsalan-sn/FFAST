@@ -19,6 +19,8 @@
         {"type": "KMeans", "desc": "Energy", "nClusters": 4}
     ],
     "loupeBondsColor":  "#404040",
+    "loupeBondsWidth": 25,
+    "loupeAtomSizeScale": 1.0,
     "loupeHoverColor":  "#FF0000",
     "loupeSelectColor":  "#00FF00",
     "loupeBGColor": "#000000",

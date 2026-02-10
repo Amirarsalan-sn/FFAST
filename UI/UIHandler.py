@@ -19,6 +19,7 @@ class UIHandler(EventClass):
     tabs = []
     loupes = []
     loupeModules = []
+    activeLoupe = None  # Currently active Loupe for menu actions
     workdir = None  # Working directory for file dialogs
 
     def __init__(self, *args, workdir=None, **kwargs):
@@ -42,6 +43,14 @@ class UIHandler(EventClass):
     def nLoupes(self):
         return len(self.loupes)
 
+    def getActiveLoupe(self):
+        """Get the currently active Loupe instance, or the most recently created one."""
+        if self.activeLoupe is not None:
+            return self.activeLoupe
+        elif len(self.loupes) > 0:
+            return self.loupes[-1]
+        return None
+
     def newLoupe(self):
         loupe = Loupe(self, len(self.loupes))
 
@@ -50,6 +59,7 @@ class UIHandler(EventClass):
 
         loupe.forceUpdate()
         self.loupes.append(loupe)
+        self.activeLoupe = loupe  # Set as active Loupe
         loupe.show()
         loupe.setFocus()
 
