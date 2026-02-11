@@ -3,6 +3,26 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
+import site
+
+# Fix Qt plugin path issue - must be set before importing PySide6
+if "QT_PLUGIN_PATH" not in os.environ:
+    # Find PySide6 without importing it (to avoid triggering Qt init)
+    for site_dir in site.getsitepackages():
+        pyside6_path = Path(site_dir) / "PySide6"
+        if pyside6_path.exists():
+            plugin_path = pyside6_path / "Qt" / "plugins"
+            lib_path = pyside6_path / "Qt" / "lib"
+            if plugin_path.exists():
+                # Set multiple Qt environment variables for maximum compatibility
+                os.environ["QT_PLUGIN_PATH"] = str(plugin_path)
+                os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(plugin_path / "platforms")
+                os.environ["DYLD_LIBRARY_PATH"] = str(lib_path)
+                os.environ["DYLD_FRAMEWORK_PATH"] = str(lib_path)
+                # Explicitly set platform to cocoa on macOS
+                os.environ["QT_QPA_PLATFORM"] = "cocoa"
+                break
 
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
