@@ -846,10 +846,51 @@ class Environment(EventClass):
     def load(self, path, taskID=None):
         # LOAD INFO (names etc)
         infoFile = os.path.join(path, "info.json")
+        info = None
         if os.path.exists(infoFile):
             with open(infoFile, "r") as f:
                 info = json.load(f)
             self.loadInfo(info)
+
+        ## LOAD DATASETS AND MODELS FROM INFO
+        if info is not None and "objects" in info:
+            for fingerprint, obj_info in info["objects"].items():
+                obj_path = obj_info.get("path")
+                obj_name = obj_info.get("name", "Unknown")
+
+                if obj_path is None or not os.path.exists(obj_path):
+                    logger.warning(f"Skipping {obj_name}: path not found at {obj_path}")
+                    continue
+
+                # Try to determine if it's a dataset or model based on extension
+                ext = os.path.splitext(obj_path)[1].lower()
+
+                # Try loading as dataset first (common extensions)
+                dataset_extensions = ['.xyz', '.extxyz', '.db', '.traj', '.npz']
+                if ext in dataset_extensions:
+                    # Find appropriate dataset loader
+                    for loader_name, loader_class in self.datasetTypes.items():
+                        try:
+                            dataset = loader_class(obj_path)
+                            if dataset is not None:
+                                dataset.initialise()
+                                self.setNewDataset(dataset)
+                                logger.info(f"Loaded dataset {obj_name} from {obj_path}")
+                                break
+                        except Exception as e:
+                            continue
+                else:
+                    # Try loading as model
+                    for loader_name, loader_class in self.modelTypes.items():
+                        try:
+                            model = loader_class(self, obj_path)
+                            if model is not None:
+                                model.initialise()
+                                self.setNewModel(model)
+                                logger.info(f"Loaded model {obj_name} from {obj_path}")
+                                break
+                        except Exception as e:
+                            continue
 
         ## LOAD CACHE
         cacheDir = os.path.join(path, "cache")
