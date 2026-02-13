@@ -811,20 +811,34 @@ class Environment(EventClass):
             if isinstance(entity, SubDataEntity):
                 continue
 
+            # Convert any inhomogeneous lists (e.g. variable-sized
+            # dataset forces) to object arrays so numpy can save them.
+            saveData = {}
+            for k, v in entity.data.items():
+                if isinstance(v, list):
+                    saveData[k] = np.array(v, dtype=object)
+                else:
+                    saveData[k] = v
             np.savez_compressed(
                 os.path.join(cacheDir, key),
                 entityDataTypeKey=entity.dataType.key,
                 cacheKey=key,
-                **entity.data,
+                **saveData,
             )
 
         ## GENERATE INFO
         info = {"objects": {}}
-        objects = self.getAllDatasets(excludeSubs=True) + self.getAllModels()
-        for o in objects:
+        for o in self.getAllDatasets(excludeSubs=True):
             info["objects"][o.fingerprint] = {
                 "name": o.getName(),
                 "path": o.path,
+                "type": "dataset",
+            }
+        for o in self.getAllModels():
+            info["objects"][o.fingerprint] = {
+                "name": o.getName(),
+                "path": o.path,
+                "type": "model",
             }
 
         # dataset/model names and paths
@@ -857,18 +871,18 @@ class Environment(EventClass):
             for fingerprint, obj_info in info["objects"].items():
                 obj_path = obj_info.get("path")
                 obj_name = obj_info.get("name", "Unknown")
+                obj_type = obj_info.get("type")
+
+                # Models are recreated as ghosts from cached data below
+                if obj_type == "model":
+                    continue
 
                 if obj_path is None or not os.path.exists(obj_path):
                     logger.warning(f"Skipping {obj_name}: path not found at {obj_path}")
                     continue
 
-                # Try to determine if it's a dataset or model based on extension
-                ext = os.path.splitext(obj_path)[1].lower()
-
-                # Try loading as dataset first (common extensions)
-                dataset_extensions = ['.xyz', '.extxyz', '.db', '.traj', '.npz']
-                if ext in dataset_extensions:
-                    # Find appropriate dataset loader
+                # Load as dataset
+                if obj_type == "dataset":
                     for loader_name, loader_class in self.datasetTypes.items():
                         try:
                             dataset = loader_class(obj_path)
@@ -880,17 +894,20 @@ class Environment(EventClass):
                         except Exception as e:
                             continue
                 else:
-                    # Try loading as model
-                    for loader_name, loader_class in self.modelTypes.items():
-                        try:
-                            model = loader_class(self, obj_path)
-                            if model is not None:
-                                model.initialise()
-                                self.setNewModel(model)
-                                logger.info(f"Loaded model {obj_name} from {obj_path}")
-                                break
-                        except Exception as e:
-                            continue
+                    # Legacy info.json without type field: guess by extension
+                    ext = os.path.splitext(obj_path)[1].lower()
+                    dataset_extensions = ['.xyz', '.extxyz', '.db', '.traj', '.npz']
+                    if ext in dataset_extensions:
+                        for loader_name, loader_class in self.datasetTypes.items():
+                            try:
+                                dataset = loader_class(obj_path)
+                                if dataset is not None:
+                                    dataset.initialise()
+                                    self.setNewDataset(dataset)
+                                    logger.info(f"Loaded dataset {obj_name} from {obj_path}")
+                                    break
+                            except Exception as e:
+                                continue
 
         ## LOAD CACHE
         cacheDir = os.path.join(path, "cache")
@@ -898,6 +915,16 @@ class Environment(EventClass):
             d = dict(np.load(npzPath, allow_pickle=True))
             dataTypeKey = str(d.pop("entityDataTypeKey"))
             cacheKey = str(d.pop("cacheKey"))
+
+            # Convert numpy object arrays back to Python lists.
+            # Variable-sized data (e.g. forces for molecules with
+            # different atom counts) is saved as np.array(list,
+            # dtype=object). The rest of the code expects these
+            # as Python lists.
+            for k, v in d.items():
+                if isinstance(v, np.ndarray) and v.dtype == object:
+                    d[k] = list(v)
+
             dataType = self.getDataType(dataTypeKey)
 
             if dataType is None:
