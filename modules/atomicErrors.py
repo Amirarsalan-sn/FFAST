@@ -57,14 +57,28 @@ def loadData(env):
                     diff = diff.reshape(diff.shape[0], -1)
                     mae = np.mean(np.abs(diff), axis=1)
 
-                kde = gaussian_kde(np.abs(mae))
+                absMae = np.abs(mae)
+                nPts = getConfig("plotDistNum")
 
-                distX = np.linspace(
-                    np.min(mae) * 0.95,
-                    np.max(mae) * 1.05,
-                    getConfig("plotDistNum"),
-                )
-                distY = kde(distX)
+                if len(absMae) < 2 or np.std(absMae) < 1e-10:
+                    distX = np.linspace(
+                        0,
+                        max(np.max(absMae), 1e-10),
+                        nPts,
+                    )
+                    distY = np.zeros_like(distX)
+                    closest_idx = np.argmin(
+                        np.abs(distX - np.mean(absMae))
+                    )
+                    distY[closest_idx] = 1.0
+                else:
+                    kde = gaussian_kde(absMae)
+                    distX = np.linspace(
+                        np.min(absMae) * 0.95,
+                        np.max(absMae) * 1.05,
+                        nPts,
+                    )
+                    distY = kde(distX)
 
                 out[zIntToZStr[i]] = {"distY": distY, "distX": distX}
 
