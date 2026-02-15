@@ -12,9 +12,15 @@ class aseDatasetLoader(DatasetLoader):
     datasetFileExtension = "*"
     saveFormats = ["db", "xyz", "extxyz", "traj", "vasp", "dftb"]
 
-    def __init__(self, path, *args, **kwargs):
+    def __init__(self, path, atomsList=None, selected_energy_key=None, selected_force_key=None, *args, **kwargs):
         super().__init__(path)
-        self.atomsList = ase.io.read(path, index=":")
+
+        # Read file only if atomsList not provided (avoid double-read)
+        if atomsList is None:
+            self.atomsList = ase.io.read(path, index=":")
+        else:
+            self.atomsList = atomsList
+
         _, self.file_extension = os.path.splitext(path)
         self.N = len(self.atomsList)
 
@@ -29,6 +35,10 @@ class aseDatasetLoader(DatasetLoader):
             self.lattice = None
 
         self.chem = self.zToChemicalFormula(self.z)
+
+        # Store key selections
+        self.selected_energy_key = selected_energy_key
+        self.selected_force_key = selected_force_key
 
 
     def ForceKeys(self):
@@ -49,7 +59,7 @@ class aseDatasetLoader(DatasetLoader):
         energykeys = []
         for key in exAtoms.info.keys():
             if "energy" in key.lower():
-                logger.debug(f"Found energy in array '{key}' for index 0.")
+                logger.info(f"Found energy in array '{key}' for index 0.")
                 num_key += 1
                 energykeys.append(key)
 
@@ -80,7 +90,22 @@ class aseDatasetLoader(DatasetLoader):
     def getEnergies(self, indices=None):
         # probably should just do it once at the start and save it as np arrays?
         keys = self.EneregyKeys()
-        if len(keys) == 0:
+
+        # Determine which key to use
+        if hasattr(self, 'selected_energy_key') and self.selected_energy_key is not None:
+            selected_key = self.selected_energy_key
+        elif len(keys) > 0:
+            selected_key = keys[0]  # Default to first key
+        else:
+            selected_key = ""  # No keys, use calculator
+
+        # Check if calculator should be used:
+        # - Empty string explicitly selected (calculator chosen in dialog), OR
+        # - Key is literally 'energy' (standard ASE calculator result key), OR
+        # - No keys available
+        use_calculator = (selected_key == "" or selected_key == "energy")
+
+        if use_calculator:
             if indices is None:
                 indices = np.arange(self.N)
             elif not isinstance(indices, Iterable):
@@ -90,23 +115,37 @@ class aseDatasetLoader(DatasetLoader):
             for idx in indices:
                 R.append(self.atomsList[idx].get_potential_energy())
         else:
-            key = keys[0]
-            logger.info(f"Using energies from array(s) {key} out of {keys}.")
+            # Use the selected key from info dictionary
+            logger.info(f"Using energy key '{selected_key}' from {keys}")
             if indices is None:
                 indices = np.arange(self.N)
             elif not isinstance(indices, Iterable):
-                return self.atomsList[indices].info[key]
+                return self.atomsList[indices].info[selected_key]
 
             R = []
             for idx in indices:
-                R.append(self.atomsList[idx].info[key])
+                R.append(self.atomsList[idx].info[selected_key])
         return np.array(R)
 
     def getForces(self, indices=None):
         # probably should just do it once at the start and save it as np arrays?
         keys = self.ForceKeys()
 
-        if len(keys) == 0:
+        # Determine which key to use
+        if hasattr(self, 'selected_force_key') and self.selected_force_key is not None:
+            selected_key = self.selected_force_key
+        elif len(keys) > 0:
+            selected_key = keys[0]  # Default to first key
+        else:
+            selected_key = ""  # No keys, use calculator
+
+        # Check if calculator should be used:
+        # - Empty string explicitly selected (calculator chosen in dialog), OR
+        # - Key is literally 'forces' (standard ASE calculator result key), OR
+        # - No keys available
+        use_calculator = (selected_key == "" or selected_key == "forces")
+
+        if use_calculator:
             if indices is None:
                 indices = np.arange(self.N)
             elif not isinstance(indices, Iterable):
@@ -116,16 +155,16 @@ class aseDatasetLoader(DatasetLoader):
             for idx in indices:
                 R.append(self.atomsList[idx].get_forces())
         else:
-            key = keys[0]
-            logger.info(f"Using forces from array(s) {key} out of {keys}.")
+            # Use the selected key from arrays dictionary
+            logger.info(f"Using force key '{selected_key}' from {keys}")
             if indices is None:
                 indices = np.arange(self.N)
             elif not isinstance(indices, Iterable):
-                return self.atomsList[indices].arrays[key]
+                return self.atomsList[indices].arrays[selected_key]
 
             R = []
             for idx in indices:
-                R.append(self.atomsList[idx].arrays[key])
+                R.append(self.atomsList[idx].arrays[selected_key])
 
         return np.array(R)
 
@@ -174,11 +213,21 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
     datasetFileExtension = "*"
     saveFormats = ["db", "xyz", "extxyz", "traj", "vasp", "dftb"]
 
-    def __init__(self, path, *args, **kwargs):
+    def __init__(self, path, atomsList=None, selected_energy_key=None, selected_force_key=None, *args, **kwargs):
         super().__init__(path)
-        self.atomsList = ase.io.read(path, index=":")
+
+        # Read file only if atomsList not provided (avoid double-read)
+        if atomsList is None:
+            self.atomsList = ase.io.read(path, index=":")
+        else:
+            self.atomsList = atomsList
+
         _, self.file_extension = os.path.splitext(path)
         self.N = len(self.atomsList)
+
+        # Store key selections
+        self.selected_energy_key = selected_energy_key
+        self.selected_force_key = selected_force_key
 
         # Build flat arrays
         R_list, F_list, E_list, z_list = [], [], [], []
@@ -188,14 +237,39 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
         force_keys = self._detectForceKeys()
         energy_keys = self._detectEnergyKeys()
 
+        # Determine which keys to use:
+        # - Empty string "" means use calculator (user explicitly selected it)
+        # - Literal 'forces'/'energy' means use calculator (standard ASE keys)
+        # - Specific key string means use that key from arrays/info
+        # - None or not set means use first available key (legacy behavior)
+        if self.selected_energy_key == "":
+            selected_energy_key = None  # Use calculator
+        elif self.selected_energy_key == "energy":
+            selected_energy_key = None  # Standard ASE key, use calculator
+        elif self.selected_energy_key:
+            selected_energy_key = self.selected_energy_key
+        else:
+            selected_energy_key = energy_keys[0] if energy_keys else None
+
+        if self.selected_force_key == "":
+            selected_force_key = None  # Use calculator
+        elif self.selected_force_key == "forces":
+            selected_force_key = None  # Standard ASE key, use calculator
+        elif self.selected_force_key:
+            selected_force_key = self.selected_force_key
+        else:
+            selected_force_key = force_keys[0] if force_keys else None
+
         for atoms in self.atomsList:
             n_atoms = len(atoms)
             R_list.append(atoms.get_positions())
 
             # Handle forces
-            if force_keys:
-                F_list.append(atoms.arrays[force_keys[0]])
+            if selected_force_key:
+                # Use specific key from arrays
+                F_list.append(atoms.arrays[selected_force_key])
             else:
+                # Use calculator
                 try:
                     F_list.append(atoms.get_forces())
                 except:
@@ -203,9 +277,11 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
                     F_list.append(np.zeros((n_atoms, 3)))
 
             # Handle energies
-            if energy_keys:
-                E_list.append(atoms.info[energy_keys[0]])
+            if selected_energy_key:
+                # Use specific key from info
+                E_list.append(atoms.info[selected_energy_key])
             else:
+                # Use calculator
                 try:
                     E_list.append(atoms.get_potential_energy())
                 except:
@@ -268,6 +344,14 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
 
         return np.array([self.lattice[i] for i in indices])
 
+    def ForceKeys(self):
+        """Get force keys (for compatibility with uniform loader)."""
+        return self._detectForceKeys()
+
+    def EneregyKeys(self):
+        """Get energy keys (for compatibility with uniform loader)."""
+        return self._detectEnergyKeys()
+
     @staticmethod
     def saveDataset(dataset, path, format=None, taskID=None):
         """Save variable dataset to ASE format."""
@@ -307,18 +391,68 @@ def loadData(env):
         datasetFileExtension = "*"
         saveFormats = ["db", "xyz", "extxyz", "traj", "vasp", "dftb"]
 
-        def __call__(self, path):
-            # Read all frames to detect if uniform or variable
+        def __call__(self, path, selected_energy_key=None, selected_force_key=None,
+                     prediction_keys=None, show_dialog=True):
+            """Load ASE dataset with optional key selection.
+
+            Args:
+                path: Path to dataset file
+                selected_energy_key: Pre-selected energy key for reference
+                selected_force_key: Pre-selected force key for reference
+                prediction_keys: List of (energy_key, force_key, model_name) tuples
+                show_dialog: Whether to show selection dialog (False when loading from session)
+
+            Returns:
+                tuple: (dataset_loader, prediction_keys) or (None, None) if cancelled
+            """
+            # Read file ONCE
             atomsList = ase.io.read(path, index=":")
             atom_counts = [len(atoms) for atoms in atomsList]
 
+            # Handle key selection first (if dialog needed)
+            if show_dialog and (selected_energy_key is None or selected_force_key is None):
+                # Create temporary loader just to detect keys and show dialog
+                if len(set(atom_counts)) == 1:
+                    temp_loader = aseDatasetLoader(path, atomsList=atomsList)
+                else:
+                    temp_loader = VariableASEDatasetLoader(path, atomsList=atomsList)
+
+                # Check if multiple keys exist
+                energy_keys = temp_loader.EneregyKeys()
+                force_keys = temp_loader.ForceKeys()
+
+                if len(energy_keys) > 1 or len(force_keys) > 1:
+                    selection = temp_loader.promptKeySelection()
+
+                    if selection is None:
+                        # User cancelled
+                        logger.info("Dataset loading cancelled by user")
+                        return None, None
+
+                    selected_energy_key = selection['energy_ref']
+                    selected_force_key = selection['force_ref']
+                    prediction_keys = selection['predictions']
+
+            # Create loader with selected keys passed to constructor
             if len(set(atom_counts)) == 1:
                 # Uniform dataset
                 logger.info(f"Loading uniform ASE dataset: {len(atomsList)} molecules, {atom_counts[0]} atoms each")
-                return aseDatasetLoader(path)
+                loader = aseDatasetLoader(
+                    path,
+                    atomsList=atomsList,
+                    selected_energy_key=selected_energy_key,
+                    selected_force_key=selected_force_key
+                )
             else:
                 # Variable dataset
                 logger.info(f"Loading variable ASE dataset: {len(atomsList)} molecules, {min(atom_counts)}-{max(atom_counts)} atoms")
-                return VariableASEDatasetLoader(path)
+                loader = VariableASEDatasetLoader(
+                    path,
+                    atomsList=atomsList,
+                    selected_energy_key=selected_energy_key,
+                    selected_force_key=selected_force_key
+                )
+
+            return loader, prediction_keys or []
 
     env.initialiseDatasetType(SmartASELoader())

@@ -174,16 +174,20 @@ class Environment(EventClass):
         self.setNewModel(model)
         logging.info(f"Model `{path}` successfully loaded")
 
-    def taskLoadPrepredictedDataset(self, path, datasetKey):
+    def taskLoadPrepredictedDataset(self, path, datasetKey, selected_energy_key=None, selected_force_key=None):
         self.newTask(
             self.loadPrepredictedDataset,
             args=(path, datasetKey),
+            kwargs={
+                'selected_energy_key': selected_energy_key,
+                'selected_force_key': selected_force_key
+            },
             visual=True,
             name="Loading prepredicted dataset",
             threaded=True,
         )
 
-    def loadPrepredictedDataset(self, path, datasetKey, taskID=None):
+    def loadPrepredictedDataset(self, path, datasetKey, taskID=None, selected_energy_key=None, selected_force_key=None):
         if "npz" in path:
             d = np.load(path, allow_pickle=True)
             E, F = d["E"], d["F"]
@@ -199,11 +203,21 @@ class Environment(EventClass):
             if len(set(atom_counts)) == 1:
                 # Uniform dataset
                 logger.info(f"Loading prepredicted data as uniform ASE dataset: {len(atomsList)} molecules, {atom_counts[0]} atoms each")
-                aseObject = aseDatasetLoader(path)
+                aseObject = aseDatasetLoader(
+                    path,
+                    atomsList=atomsList,
+                    selected_energy_key=selected_energy_key,
+                    selected_force_key=selected_force_key
+                )
             else:
                 # Variable dataset
                 logger.info(f"Loading prepredicted data as variable ASE dataset: {len(atomsList)} molecules, {min(atom_counts)}-{max(atom_counts)} atoms")
-                aseObject = VariableASEDatasetLoader(path)
+                aseObject = VariableASEDatasetLoader(
+                    path,
+                    atomsList=atomsList,
+                    selected_energy_key=selected_energy_key,
+                    selected_force_key=selected_force_key
+                )
 
             E = aseObject.getEnergies()
             F = aseObject.getForces()
@@ -295,16 +309,33 @@ class Environment(EventClass):
         else:
             return ds
 
-    def taskLoadDataset(self, path, datasetType):
+    def taskLoadDataset(self, path, datasetType, selected_energy_key=None,
+                       selected_force_key=None, prediction_keys=None):
+        """Load dataset and optionally load predictions from same file.
+
+        Args:
+            path: Path to dataset file
+            datasetType: Type of dataset loader to use
+            selected_energy_key: Pre-selected energy key for reference (ASE only)
+            selected_force_key: Pre-selected force key for reference (ASE only)
+            prediction_keys: List of (energy_key, force_key, model_name) tuples
+        """
         self.newTask(
             self.loadDataset,
             args=(path, datasetType),
+            kwargs={
+                'selected_energy_key': selected_energy_key,
+                'selected_force_key': selected_force_key,
+                'prediction_keys': prediction_keys
+            },
             visual=True,
             name="Loading dataset",
             threaded=True,
         )
 
-    def loadDataset(self, path, datasetType, taskID=None):
+    def loadDataset(self, path, datasetType, taskID=None, selected_energy_key=None,
+                   selected_force_key=None, prediction_keys=None):
+        """Load dataset and create ghost models for prediction keys."""
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
@@ -315,15 +346,142 @@ class Environment(EventClass):
             )
             return None
 
-        dataset = self.datasetTypes[datasetType](path)
+        # Load dataset - pass selected keys to ASE loader
+        if datasetType == "ase (auto)":
+            result = self.datasetTypes[datasetType](
+                path,
+                selected_energy_key=selected_energy_key,
+                selected_force_key=selected_force_key,
+                prediction_keys=prediction_keys,
+                show_dialog=False  # Dialog already shown on main thread
+            )
+        else:
+            result = self.datasetTypes[datasetType](path)
+
+        # Handle SmartASELoader return value (tuple) or regular loader (dataset object)
+        if isinstance(result, tuple):
+            dataset, pred_keys = result
+            if dataset is None:
+                logger.info("Dataset loading cancelled by user")
+                return
+
+            # Merge prediction keys from dialog with any passed in
+            if pred_keys:
+                prediction_keys = (prediction_keys or []) + pred_keys
+        else:
+            dataset = result
+
         if dataset is None:
             logging.warn(f"Dataset `{path}` did not load successfully")
             return
-        dataset.initialise()
 
+        dataset.initialise()
         self.setNewDataset(dataset)
         logging.info(f"Dataset `{path}` successfully loaded")
+
+        # Load predictions as ghost models if specified
+        if prediction_keys:
+            # Reuse atomsList from dataset to avoid re-reading file
+            atomsList = dataset.atomsList if hasattr(dataset, 'atomsList') else None
+            self._loadPredictionsFromKeys(dataset, path, prediction_keys, atomsList=atomsList)
+
         self.lookForGhosts()
+
+    def _loadPredictionsFromKeys(self, dataset, path, prediction_keys, atomsList=None):
+        """Load prediction keys from same file as ghost models.
+
+        Args:
+            dataset: The loaded dataset
+            path: Path to the file
+            prediction_keys: List of (energy_key, force_key, model_name) tuples
+            atomsList: Optional pre-loaded atoms list to avoid re-reading file
+        """
+        from modules.aseDataset import aseDatasetLoader, VariableASEDatasetLoader
+        import ase.io
+        from utils import md5FromArraysAndStrings
+
+        # Read file only if not provided
+        if atomsList is None:
+            atomsList = ase.io.read(path, index=":")
+
+        atom_counts = [len(atoms) for atoms in atomsList]
+        is_uniform = len(set(atom_counts)) == 1
+
+        for energy_key, force_key, model_name in prediction_keys:
+            try:
+                # Create temporary loader with selected keys and pre-loaded atomsList
+                if is_uniform:
+                    temp_loader = aseDatasetLoader(
+                        path,
+                        atomsList=atomsList,
+                        selected_energy_key=energy_key,
+                        selected_force_key=force_key
+                    )
+                else:
+                    temp_loader = VariableASEDatasetLoader(
+                        path,
+                        atomsList=atomsList,
+                        selected_energy_key=energy_key,
+                        selected_force_key=force_key
+                    )
+
+                # Extract predictions
+                E = temp_loader.getEnergies()
+                F = temp_loader.getForces()
+
+                # Verify shape matches dataset
+                dataset_E = dataset.getEnergies()
+                if isinstance(E, list) and isinstance(dataset_E, list):
+                    # Variable dataset - check list lengths
+                    if len(E) != len(dataset_E):
+                        logger.error(
+                            f"Shape mismatch for prediction '{model_name}'. "
+                            f"Expected {len(dataset_E)} molecules, got {len(E)}. Skipping."
+                        )
+                        continue
+                elif hasattr(E, 'shape') and hasattr(dataset_E, 'shape'):
+                    # Uniform dataset - check array shapes
+                    if E.shape != dataset_E.shape:
+                        logger.error(
+                            f"Shape mismatch for prediction '{model_name}'. "
+                            f"Expected {dataset_E.shape}, got {E.shape}. Skipping."
+                        )
+                        continue
+
+                # Create ghost model fingerprint
+                ghost_fp = md5FromArraysAndStrings(E, F, model_name)
+
+                # Cache predictions
+                energy_dt = self.getDataType("energy")
+                if isinstance(E, list):
+                    # Variable dataset - E is list of scalars, need to convert to array
+                    import numpy as np
+                    E_array = np.array(E)
+                    energy_de = energy_dt.newDataEntity(energy=E_array.flatten())
+                else:
+                    energy_de = energy_dt.newDataEntity(energy=E.flatten())
+                self.setData(energy_de, "energy", model=ghost_fp, dataset=dataset)
+
+                forces_dt = self.getDataType("forces")
+                forces_de = forces_dt.newDataEntity(forces=F)
+                self.setData(forces_de, "forces", model=ghost_fp, dataset=dataset)
+
+                # Register ghost model info
+                self.info.setdefault('objects', {})[ghost_fp] = {
+                    'path': path,
+                    'name': model_name,
+                    'type': 'ghost_model',
+                    'energy_key': energy_key,
+                    'force_key': force_key
+                }
+
+                logger.info(f"Loaded predictions for '{model_name}' from keys {energy_key}/{force_key}")
+
+            except Exception as e:
+                logger.error(f"Failed to load predictions for '{model_name}': {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                continue
 
     def declareSubDataset(self, parent, model, idx, subName):
 
@@ -838,17 +996,32 @@ class Environment(EventClass):
         ## GENERATE INFO
         info = {"objects": {}}
         for o in self.getAllDatasets(excludeSubs=True):
-            info["objects"][o.fingerprint] = {
+            obj_info = {
                 "name": o.getName(),
                 "path": o.path,
                 "type": "dataset",
             }
+
+            # Store ASE key selections if present
+            if hasattr(o, 'selected_energy_key') and o.selected_energy_key:
+                obj_info["ase_energy_key"] = o.selected_energy_key
+            if hasattr(o, 'selected_force_key') and o.selected_force_key:
+                obj_info["ase_force_key"] = o.selected_force_key
+
+            info["objects"][o.fingerprint] = obj_info
+
         for o in self.getAllModels():
             info["objects"][o.fingerprint] = {
                 "name": o.getName(),
                 "path": o.path,
                 "type": "model",
             }
+
+        # Merge any additional info (including ghost models)
+        if hasattr(self, 'info') and 'objects' in self.info:
+            for fp, obj_info in self.info['objects'].items():
+                if fp not in info['objects']:
+                    info['objects'][fp] = obj_info
 
         # dataset/model names and paths
 
@@ -892,15 +1065,54 @@ class Environment(EventClass):
 
                 # Load as dataset
                 if obj_type == "dataset":
+                    # Extract ASE-specific keys
+                    ase_energy_key = obj_info.get("ase_energy_key")
+                    ase_force_key = obj_info.get("ase_force_key")
+
+                    # Find prediction keys associated with this dataset
+                    prediction_keys = []
+                    for ghost_fp, ghost_info in info.get('objects', {}).items():
+                        if (ghost_info.get('type') == 'ghost_model' and
+                            ghost_info.get('path') == obj_path):
+                            prediction_keys.append((
+                                ghost_info['energy_key'],
+                                ghost_info['force_key'],
+                                ghost_info['name']
+                            ))
+
                     for loader_name, loader_class in self.datasetTypes.items():
                         try:
-                            dataset = loader_class(obj_path)
+                            # Special handling for ASE loader with key selection
+                            if loader_name == "ase (auto)" and (ase_energy_key or ase_force_key):
+                                # Pass keys and disable dialog
+                                result = loader_class(
+                                    obj_path,
+                                    selected_energy_key=ase_energy_key,
+                                    selected_force_key=ase_force_key,
+                                    prediction_keys=prediction_keys,
+                                    show_dialog=False  # Don't show dialog when loading session
+                                )
+
+                                if isinstance(result, tuple):
+                                    dataset, _ = result
+                                else:
+                                    dataset = result
+                            else:
+                                dataset = loader_class(obj_path)
+
                             if dataset is not None:
                                 dataset.initialise()
                                 self.setNewDataset(dataset)
                                 logger.info(f"Loaded dataset {obj_name} from {obj_path}")
+
+                                # Load predictions if this is an ASE dataset
+                                if prediction_keys and loader_name == "ase (auto)":
+                                    atomsList = dataset.atomsList if hasattr(dataset, 'atomsList') else None
+                                    self._loadPredictionsFromKeys(dataset, obj_path, prediction_keys, atomsList=atomsList)
+
                                 break
                         except Exception as e:
+                            logger.debug(f"Failed to load with {loader_name}: {e}")
                             continue
                 else:
                     # Legacy info.json without type field: guess by extension
