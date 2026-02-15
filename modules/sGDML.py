@@ -1,7 +1,7 @@
-from loaders.modelLoader import ModelLoader
+from modelLoaders.loader import ModelLoader
 import numpy as np
 from utils import md5FromArraysAndStrings
-from loaders.datasetLoader import DatasetLoader
+from datasetLoaders.loader import DatasetLoader
 
 
 class sGDMLModelLoader(ModelLoader):

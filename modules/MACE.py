@@ -1,4 +1,4 @@
-from loaders.modelLoader import ModelLoaderACE
+from modelLoaders.loader import ModelLoaderACE
 import torch
 import logging
 
