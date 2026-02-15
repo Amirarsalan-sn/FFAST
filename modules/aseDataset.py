@@ -1,7 +1,7 @@
 import os
 import logging
 import numpy as np
-from loaders.datasetLoader import DatasetLoader, VariableDatasetLoader
+from datasetLoaders.loader import DatasetLoader, VariableDatasetLoader
 import ase.io
 from collections.abc import Iterable
 

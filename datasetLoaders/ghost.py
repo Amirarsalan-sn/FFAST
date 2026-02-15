@@ -1,4 +1,4 @@
-from .datasetLoader import DatasetLoader
+from .loader import DatasetLoader
 import numpy as np
 from utils import md5FromArraysAndStrings
 

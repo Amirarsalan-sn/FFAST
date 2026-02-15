@@ -1,11 +1,11 @@
 from events import EventClass
-from loaders.datasetLoader import (
+from datasetLoaders.loader import (
     SubDataset,
     FrozenSubDataset,
     AtomFilteredDataset,
 )
-from loaders.modelGhost import GhostModelLoader
-from loaders.zeroModel import ZeroModelLoader
+from modelLoaders.ghost import GhostModelLoader
+from modelLoaders.zeroModel import ZeroModelLoader
 from tasks import TaskManager
 from client.dataType import DataEntity
 from utils import md5FromArraysAndStrings

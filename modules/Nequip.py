@@ -1,4 +1,4 @@
-from loaders.modelLoader import ModelLoaderACE
+from modelLoaders.loader import ModelLoaderACE
 import numpy as np
 from utils import md5FromArraysAndStrings
 import torch
