@@ -197,17 +197,17 @@ def loadLoupe(UIHandler, loupe):
 
     buttonContainer = Widget(parent=pane, layout="horizontal")
 
-    topBtn = PushButton("Top")
+    topBtn = PushButton("Top", parent=buttonContainer)
     topBtn.setToolTip("View from top (azimuth=0°, elevation=90°)")
     topBtn.clicked.connect(lambda: setPresetView(0, 90))
     buttonContainer.layout.addWidget(topBtn)
 
-    frontBtn = PushButton("Front")
+    frontBtn = PushButton("Front", parent=buttonContainer)
     frontBtn.setToolTip("View from front (azimuth=0°, elevation=0°)")
     frontBtn.clicked.connect(lambda: setPresetView(0, 0))
     buttonContainer.layout.addWidget(frontBtn)
 
-    sideBtn = PushButton("Side")
+    sideBtn = PushButton("Side", parent=buttonContainer)
     sideBtn.setToolTip("View from side (azimuth=90°, elevation=0°)")
     sideBtn.clicked.connect(lambda: setPresetView(90, 0))
     buttonContainer.layout.addWidget(sideBtn)

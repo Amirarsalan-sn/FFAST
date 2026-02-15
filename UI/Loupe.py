@@ -278,16 +278,18 @@ class InteractiveCanvas(Widget):
         self.props[prop.key] = prop
 
     def addAtomSelectToolbar(self):
-        self.atomSelectBar = Widget(color="@BGColor1", layout="horizontal")
+        self.atomSelectBar = Widget(
+            color="@BGColor1", layout="horizontal", parent=self
+        )
         self.atomSelectBar.setFixedHeight(40)
         self.layout.insertWidget(0, self.atomSelectBar)
 
         self.atomSelectBar.setContentsMargins(8, 0, 8, 0)
 
-        self.atomSelectBar.label1 = QtWidgets.QLabel("/")
-        self.atomSelectBar.label2 = QtWidgets.QLabel("/")
+        self.atomSelectBar.label1 = QtWidgets.QLabel("/", parent=self.atomSelectBar)
+        self.atomSelectBar.label2 = QtWidgets.QLabel("/", parent=self.atomSelectBar)
         self.atomSelectBar.cancelButton = ToolButton(
-            lambda x: self.setActiveAtomSelectTool(), "close"
+            lambda x: self.setActiveAtomSelectTool(), "close", parent=self.atomSelectBar
         )
 
         self.atomSelectBar.layout.addWidget(self.atomSelectBar.label1)
@@ -594,16 +596,18 @@ class Loupe(Widget, EventChildClass):
 
         # PLAYBACK
         playbackWindow = Widget(parent=pane, layout="vertical")
-        self.indexSlider = Slider()
+        self.indexSlider = Slider(parent=playbackWindow)
         self.indexSlider.setCallbackFunc(self.setIndex)
         playbackWindow.layout.addWidget(self.indexSlider)
 
         arrowBar = Widget(parent=pane, layout="horizontal")
-        self.indexLeftArrow = ToolButton(self.onPrevious, "leftArrow")
+        self.indexLeftArrow = ToolButton(
+            self.onPrevious, "leftArrow", parent=arrowBar
+        )
         self.indexLeftArrow.setToolTip("Previous frame")
-        self.playButton = ToolButton(self.toggleVideo, "start")
+        self.playButton = ToolButton(self.toggleVideo, "start", parent=arrowBar)
         self.playButton.setToolTip("Toggle animation")
-        self.indexRightArrow = ToolButton(self.onNext, "rightArrow")
+        self.indexRightArrow = ToolButton(self.onNext, "rightArrow", parent=arrowBar)
         self.indexRightArrow.setToolTip("Next frame")
 
         arrowBar.layout.addStretch()

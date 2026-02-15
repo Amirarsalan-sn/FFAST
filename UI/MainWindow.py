@@ -35,7 +35,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.layout)
 
-        self.mainContainer = Widget(layout="horizontal", parent=None)
+        self.mainContainer = Widget(layout="horizontal", parent=self)
         # self.layout.addWidget(self.mainContainer)
         self.setCentralWidget(self.mainContainer)
         self.containerLayout = self.mainContainer.layout
