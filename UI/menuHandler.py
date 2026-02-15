@@ -104,7 +104,106 @@ class MenuHandler(EventClass):
             self.handler.window, fileTypes=fileTypes, extensions=extensions, directory=workdir
         )
 
-        env.taskLoadDataset(path, typ)
+        # For ASE datasets, show key selection dialog on main thread (before threaded task)
+        selected_energy_key = None
+        selected_force_key = None
+        prediction_keys = None
+
+        if typ == "ase (auto)" and path:
+            # Show dialog on main thread to avoid Qt threading issues
+            result = self._showASEKeySelectionDialog(path)
+
+            # If user cancelled, abort (all three values are None)
+            if result == (None, None, None):
+                return
+
+            selected_energy_key, selected_force_key, prediction_keys = result
+
+        env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
+                           selected_force_key=selected_force_key, prediction_keys=prediction_keys)
+
+    def _showASEKeySelectionDialog(self, path, for_predictions=False):
+        """Show ASE key selection dialog on main thread.
+
+        Reads only the FIRST frame to detect available keys, then shows dialog.
+        The full dataset is loaded later in the background thread.
+
+        Args:
+            path: Path to the ASE file
+            for_predictions: If True, show simplified dialog for loading predictions only
+
+        Returns:
+            tuple: (selected_energy_key, selected_force_key, prediction_keys) or (None, None, None) if cancelled
+        """
+        import ase.io
+        from modules.aseDataset import aseDatasetLoader
+        from UI.KeySelectionDialog import KeySelectionDialog
+        import logging
+
+        logger = logging.getLogger("FFAST")
+
+        try:
+            # Read ONLY first frame to detect keys (much faster for large datasets)
+            first_atoms = ase.io.read(path, index=0)
+
+            # Create temporary loader with just first frame to access key detection
+            # We'll load the full dataset later in the background thread
+            temp_loader = aseDatasetLoader(path, atomsList=[first_atoms])
+
+            # Check if multiple keys exist
+            energy_keys = temp_loader.EneregyKeys()
+            force_keys = temp_loader.ForceKeys()
+
+            # Check if calculator is available
+            has_calculator_energy = False
+            has_calculator_forces = False
+            try:
+                first_atoms.get_potential_energy()
+                has_calculator_energy = True
+            except:
+                pass
+
+            try:
+                first_atoms.get_forces()
+                has_calculator_forces = True
+            except:
+                pass
+
+            logger.info(f"Detected {len(energy_keys)} energy key(s) and {len(force_keys)} force key(s) from first frame")
+            logger.info(f"Calculator available: energy={has_calculator_energy}, forces={has_calculator_forces}")
+
+            # Count total options for each
+            energy_options = len(energy_keys) + (1 if has_calculator_energy else 0)
+            force_options = len(force_keys) + (1 if has_calculator_forces else 0)
+
+            # Skip dialog only if there's exactly one option for each
+            if energy_options <= 1 and force_options <= 1:
+                # Use the single available option for each
+                selected_energy = energy_keys[0] if energy_keys else (None if has_calculator_energy else None)
+                selected_force = force_keys[0] if force_keys else (None if has_calculator_forces else None)
+                return (selected_energy, selected_force, [])
+
+            # Show dialog
+            dialog = KeySelectionDialog(
+                energy_keys, force_keys,
+                parent=self.handler.window,
+                for_predictions=for_predictions
+            )
+            if dialog.exec() == KeySelectionDialog.Accepted:
+                selection = dialog.getSelection()
+                return (
+                    selection['energy_ref'],
+                    selection['force_ref'],
+                    selection['predictions']
+                )
+            else:
+                # User cancelled
+                logger.info("Dataset loading cancelled by user")
+                return None, None, None
+
+        except Exception as e:
+            logger.error(f"Error showing ASE key selection dialog: {e}")
+            return None, None, []
 
     def onModelLoad(self):
         env = self.handler.env
@@ -130,7 +229,26 @@ class MenuHandler(EventClass):
             self.handler.window, fileTypes=names, extensions=extensions, directory=workdir
         )
         idx = names.index(typ)
-        env.taskLoadPrepredictedDataset(path, keys[idx])
+
+        # For ASE files (non-NPZ), show key selection dialog on main thread
+        selected_energy_key = None
+        selected_force_key = None
+
+        if path and "npz" not in path:
+            # ASE file - might have multiple keys
+            result = self._showASEKeySelectionDialog(path, for_predictions=True)
+
+            # If user cancelled, abort
+            if result == (None, None, None):
+                return
+
+            selected_energy_key, selected_force_key, _ = result  # Ignore prediction_keys for this use case
+
+        env.taskLoadPrepredictedDataset(
+            path, keys[idx],
+            selected_energy_key=selected_energy_key,
+            selected_force_key=selected_force_key
+        )
 
     def newLoupe(self):
         self.handler.newLoupe()
