@@ -22,8 +22,8 @@ class MenuHandler(EventClass):
         File.addAction("Load Dataset", self.onDatasetLoad, "Ctrl+d")
         File.addAction("Load Model", self.onModelLoad, "Ctrl+m")
 
-        File.addAction("Load Zero Model", self.loadZeroModel, "Ctrl+0")
-        File.addAction("Load Prediction", self.loadPrepredictedModel, "Ctrl+p")
+        File.addAction("Load Zero Model", self.onZeroModelLoad, "Ctrl+0")
+        File.addAction("Load Prediction", self.onPrepredictedModelLoad, "Ctrl+p")
 
         # File.addAction("Preferences", self.onPreferences)
         # File.addAction("Exit", self.onExit)
@@ -117,7 +117,7 @@ class MenuHandler(EventClass):
 
         env.taskLoadModel(path, typ)
 
-    def loadPrepredictedModel(self):
+    def onPrepredictedModelLoad(self):
         env = self.handler.env
         workdir = self.handler.workdir
         names = [x.getName() for x in env.getAllDatasets(excludeSubs=True)]
@@ -130,14 +130,14 @@ class MenuHandler(EventClass):
             self.handler.window, fileTypes=names, extensions=extensions, directory=workdir
         )
         idx = names.index(typ)
-        env.loadPrepredictedDataset(path, keys[idx])
+        env.taskLoadPrepredictedDataset(path, keys[idx])
 
     def newLoupe(self):
         self.handler.newLoupe()
 
-    def loadZeroModel(self):
+    def onZeroModelLoad(self):
         env = self.handler.env
-        env.loadZeroModel()
+        env.taskLoadZeroModel()
 
     def setBondWidth(self, width):
         """Set bond width for the active Loupe."""

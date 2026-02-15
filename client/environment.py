@@ -174,7 +174,16 @@ class Environment(EventClass):
         self.setNewModel(model)
         logging.info(f"Model `{path}` successfully loaded")
 
-    def loadPrepredictedDataset(self, path, datasetKey):
+    def taskLoadPrepredictedDataset(self, path, datasetKey):
+        self.newTask(
+            self.loadPrepredictedDataset,
+            args=(path, datasetKey),
+            visual=True,
+            name="Loading prepredicted dataset",
+            threaded=True,
+        )
+
+    def loadPrepredictedDataset(self, path, datasetKey, taskID=None):
         if "npz" in path:
             d = np.load(path, allow_pickle=True)
             E, F = d["E"], d["F"]
@@ -1001,7 +1010,16 @@ class Environment(EventClass):
                 model.initialise()
                 self.setNewModel(model)
 
-    def loadZeroModel(self):
+    def taskLoadZeroModel(self):
+        self.newTask(
+            self.loadZeroModel,
+            args=(),
+            visual=True,
+            name="Loading model",
+            threaded=True,
+        )
+
+    def loadZeroModel(self, taskID=None):
         fp = ZeroModelLoader.fingerprint
         if self.modelExists(fp):
             return
