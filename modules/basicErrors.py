@@ -301,7 +301,7 @@ def loadUI(UIHandler, env):
     UIHandler.addContentTab(ct, "Basic Errors")
 
     # Energy shift checkbox (global toggle)
-    shiftCheckBox = QCheckBox("Subtract mean energy offset")
+    shiftCheckBox = QCheckBox("Subtract mean energy offset", parent=ct)
     shiftCheckBox.setToolTip(
         "Remove constant energy offset by subtracting "
         "mean(E_predicted - E_true) from all energy errors"
@@ -437,7 +437,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Energy MAE", getConfig("energyUnit"))
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
@@ -502,7 +506,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Forces MAE", getConfig("forceUnit"))
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.addOption(self.slider)
             self.slider.setCallbackFunc(self.updateSmoothing)
@@ -562,7 +570,7 @@ def loadUI(UIHandler, env):
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
 
     # TABLES
-    scrollContainer = HorizontalContainerScrollArea()
+    scrollContainer = HorizontalContainerScrollArea(parent=ct)
     scrollContainer.content.layout.setSpacing(32)
 
     class BaseTable(Table):

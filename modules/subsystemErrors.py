@@ -123,7 +123,7 @@ def loadUI(UIHandler, env):
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
 
     # TABLES
-    scrollContainer = HorizontalContainerScrollArea()
+    scrollContainer = HorizontalContainerScrollArea(parent=ct)
     scrollContainer.content.layout.setSpacing(32)
 
     class BaseTable(Table):

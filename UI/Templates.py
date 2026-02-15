@@ -208,18 +208,18 @@ class Slider(Widget):
         self.hasEditBox = hasEditBox
         self.interval = 1
 
-        self.slider = QtWidgets.QSlider(Qt.Horizontal)
+        self.slider = QtWidgets.QSlider(Qt.Horizontal, parent=self)
         self.layout.addWidget(self.slider)
         self.slider.valueChanged.connect(self.onUpdateSlider)
 
         if hasEditBox:
-            self.lineEdit = LineEdit()
+            self.lineEdit = LineEdit(parent=self)
             self.lineEdit.setFixedWidth(50)
             self.layout.addWidget(self.lineEdit)
             self.lineEdit.setOnEdit(self.onUpdateLineEdit)
 
         if label is not None:
-            self.label = QtWidgets.QLabel(label)
+            self.label = QtWidgets.QLabel(label, parent=self)
             self.layout.insertWidget(0, self.label)
             self.layout.setSpacing(8)
 
@@ -538,7 +538,7 @@ class HorizontalContainerScrollArea(Widget):
     def __init__(self, **kwargs):
         super().__init__(layout="vertical", **kwargs)
         self.scrollArea = HorizontalExpandingScrollArea()
-        self.content = Widget(layout="horizontal")
+        self.content = Widget(parent=self, layout="horizontal")
         self.scrollArea.setContent(self.content)
         self.layout.addWidget(self.scrollArea)
 
@@ -621,7 +621,7 @@ class CollapsibleWidget(Widget):
         self.layout.addWidget(self.titleButton)
 
         if widget is None:
-            self.scrollWidget = Widget(layout="vertical")
+            self.scrollWidget = Widget(parent=self, layout="vertical")
             self.scrollLayout = self.scrollWidget.layout
         else:
             self.scrollWidget = widget
@@ -785,11 +785,11 @@ class InfoWidget(Widget):
         # ADD LABELS
         nRows = len(args)
         for i in range(self.nRows, nRows):
-            labelLeft = QtWidgets.QLabel("")
+            labelLeft = QtWidgets.QLabel("", parent=self)
             labelLeft.setObjectName("LeftLabel")
             self.layout.addWidget(labelLeft, i, 0)
 
-            labelRight = QtWidgets.QLabel("")
+            labelRight = QtWidgets.QLabel("", parent=self)
             labelRight.setObjectName("RightLabel")
             self.layout.addWidget(labelRight, i, 1)
 
@@ -820,9 +820,9 @@ class FlexibleHList(Widget):
 
     def __init__(self, elementSize=150, **kwargs):
         super().__init__(layout="horizontal", **kwargs)
-        self.gridWidget = Widget(layout="grid")
+        self.gridWidget = Widget(parent=self, layout="grid")
         self.gridWidget.layout.setSpacing(5)
-        self.spacerWidget = Widget()
+        self.spacerWidget = Widget(parent=self)
         self.gridLayout = self.gridWidget.layout
 
         self.gridWidget.setSizePolicy(
@@ -1119,7 +1119,7 @@ class BasicLabelWidget(Widget):
 
         self.layout.setContentsMargins(spacing, spacing, spacing, spacing)
 
-        self.label = QtWidgets.QLabel("")
+        self.label = QtWidgets.QLabel("", parent=self)
         self.layout.addWidget(self.label)
 
     def setText(self, s):
@@ -1193,13 +1193,14 @@ class TableView(Widget):
         self.headerTopLabels = []
         self.headerLeftLabels = []
         self.cornerLabel = BasicLabelWidget(
+            parent=self,
             widgetName="tableHeaderLabelCorner",
             styleSheet=self.headerLabelStyleSheet,
             spacing=self.spacing,
             color="transparent",
         )
         self.columnWidgets = []
-        self.headerLeftWidget = Widget(layout="vertical")
+        self.headerLeftWidget = Widget(parent=self, layout="vertical")
         self.headerLeftWidget.layout.addWidget(self.cornerLabel)
         self.layout.addWidget(self.headerLeftWidget)
 
@@ -1211,6 +1212,7 @@ class TableView(Widget):
         for col in range(0, nCols):
             for row in range(len(self.labels[col]), nRows):
                 label = BasicLabelWidget(
+                    parent=self.columnWidgets[col],
                     widgetName="tableHeaderLabel",
                     styleSheet=self.labelStyleSheet,
                     spacing=self.spacing,
@@ -1244,6 +1246,7 @@ class TableView(Widget):
         # CREATE LEFT HEADERS
         for row in range(len(self.headerLeftLabels), nRows):
             label = BasicLabelWidget(
+                parent=self.headerLeftWidget,
                 widgetName="tableHeaderLabelLeft",
                 styleSheet=self.headerLabelStyleSheet,
                 spacing=self.spacing,
@@ -1254,11 +1257,12 @@ class TableView(Widget):
 
         # CREATE TOP HEADERS
         for col in range(len(self.columnWidgets), nCols):
-            self.columnWidgets.append(Widget(layout="vertical"))
+            self.columnWidgets.append(Widget(parent=self, layout="vertical"))
             self.layout.addWidget(self.columnWidgets[col])
             self.labels.append([])
 
             label = BasicLabelWidget(
+                parent=self.columnWidgets[col],
                 widgetName="tableHeaderLabelTop",
                 styleSheet=self.headerLabelStyleSheet,
                 spacing=self.spacing,
@@ -1351,7 +1355,7 @@ class SettingsWidgetBase(Widget, EventChildClass):
             self.setFixedHeight(40)
 
         if hasLabel:
-            self.label = QtWidgets.QLabel(str(name))
+            self.label = QtWidgets.QLabel(str(name), parent=self)
             self.layout.addWidget(self.label)
             self.label.setFixedWidth(labelWidth)
             self.layout.addStretch()

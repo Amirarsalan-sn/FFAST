@@ -138,18 +138,18 @@ class BasicPlotWidget(Widget, EventChildClass, DataDependentObject):
         self.layout.setSpacing(8)
 
         # TOOLBAR
-        self.toolbar = Widget(layout="horizontal")
+        self.toolbar = Widget(parent=self, layout="horizontal")
         self.toolbar.setFixedHeight(30)
         self.toolbar.setObjectName("plotToolbar")
         self.layout.addWidget(self.toolbar)
 
         # DIVIDER
-        divider = Widget(color="@TextColor3")
+        divider = Widget(parent=self, color="@TextColor3")
         divider.setFixedHeight(1)
         self.layout.addWidget(divider)
 
         # OPTIONS
-        self.optionsToolbar = Widget(layout="horizontal")
+        self.optionsToolbar = Widget(parent=self, layout="horizontal")
         self.optionsToolbar.setObjectName("plotoptionsToolbar")
         self.optionsToolbar.layout.addStretch()
         self.layout.addWidget(self.optionsToolbar)
@@ -539,24 +539,24 @@ class Table(Widget, EventChildClass, DataDependentObject):
         )
 
         # TOOLBAR
-        self.toolbar = Widget(layout="horizontal")
+        self.toolbar = Widget(parent=self, layout="horizontal")
         self.toolbar.setFixedHeight(30)
         self.toolbar.setObjectName("plotToolbar")
         self.layout.addWidget(self.toolbar)
 
         # DIVIDER
-        divider = Widget(color="@TextColor3")
+        divider = Widget(parent=self, color="@TextColor3")
         divider.setFixedHeight(1)
         self.layout.addWidget(divider)
 
         # OPTIONS
-        self.optionsToolbar = Widget(layout="horizontal")
+        self.optionsToolbar = Widget(parent=self, layout="horizontal")
         self.optionsToolbar.setObjectName("plotoptionsToolbar")
         self.optionsToolbar.layout.addStretch()
         self.layout.addWidget(self.optionsToolbar)
 
         # TABLEVIEW
-        self.table = TableView()
+        self.table = TableView(parent=self)
         self.layout.addWidget(self.table)
         self.applyToolbar(title=title)  # needs the table to exist (does it?)
 

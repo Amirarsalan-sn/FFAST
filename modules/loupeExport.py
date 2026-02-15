@@ -269,10 +269,10 @@ def addSettingsPane(UIHandler, loupe):
 
     # Background Color Picker
     colorContainer = Widget(parent=pane, layout="horizontal")
-    colorLabel = QLabel("Background Color:")
+    colorLabel = QLabel("Background Color:", parent=colorContainer)
     colorContainer.layout.addWidget(colorLabel)
 
-    colorButton = PushButton("Choose Color")
+    colorButton = PushButton("Choose Color", parent=colorContainer)
     colorButton.setToolTip("Select background color for opaque PNG export") #and JPEG
 
     def updateButtonColor():
@@ -298,22 +298,22 @@ def addSettingsPane(UIHandler, loupe):
     pane.layout.addWidget(colorContainer)
 
     # Add separator
-    separator1 = QLabel("─" * 30)
+    separator1 = QLabel("─" * 30, parent=pane)
     pane.layout.addWidget(separator1)
 
     # PIL Export Section
-    pilLabel = QLabel("PIL/Pillow Export:")
+    pilLabel = QLabel("PIL/Pillow Export:", parent=pane)
     pilLabel.setStyleSheet("font-weight: bold;")
     pane.layout.addWidget(pilLabel)
 
     buttonContainerPIL = Widget(parent=pane, layout="vertical")
 
-    pngOpaqueBtnPIL = PushButton("PNG (Opaque)")
+    pngOpaqueBtnPIL = PushButton("PNG (Opaque)", parent=buttonContainerPIL)
     pngOpaqueBtnPIL.setToolTip("Save as PNG with current background using PIL")
     pngOpaqueBtnPIL.clicked.connect(partial(exportImagePILOpaque, loupe))
     buttonContainerPIL.layout.addWidget(pngOpaqueBtnPIL)
 
-    pngTransparentBtnPIL = PushButton("PNG (Transparent)")
+    pngTransparentBtnPIL = PushButton("PNG (Transparent)", parent=buttonContainerPIL)
     pngTransparentBtnPIL.setToolTip("Save as PNG with transparent background using PIL")
     pngTransparentBtnPIL.clicked.connect(partial(exportImagePILTransparent, loupe))
     buttonContainerPIL.layout.addWidget(pngTransparentBtnPIL)
@@ -326,11 +326,11 @@ def addSettingsPane(UIHandler, loupe):
     pane.layout.addWidget(buttonContainerPIL)
 
     # Add separator
-    separator2 = QLabel("─" * 30)
+    separator2 = QLabel("─" * 30, parent=pane)
     pane.layout.addWidget(separator2)
 
     # Vispy Export Section
-    vispyLabel = QLabel("Vispy Native Export:")
+    vispyLabel = QLabel("Vispy Native Export:", parent=pane)
     vispyLabel.setStyleSheet("font-weight: bold;")
     pane.layout.addWidget(vispyLabel)
 

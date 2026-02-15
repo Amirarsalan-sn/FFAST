@@ -119,7 +119,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Gyration radius")
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
@@ -168,7 +172,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Gyradius/Energy (Normalised)")
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
@@ -227,7 +235,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Gyradius/Forces MAE (Normalised)")
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
