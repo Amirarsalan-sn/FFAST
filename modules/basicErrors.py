@@ -469,7 +469,7 @@ def loadUI(UIHandler, env):
             self.visualRefresh(force=True, noAutoRange=True)
 
         def addPlots(self):
-            #self.slider.setMinMax(1, self.env.getMaxSize()//2+1)  # requires more thinking (what happens to current smoothings when deleting datasets)
+            self.slider.setMinMax(1, self.env.getMaxSize()//2+1)  # requires more thinking (what happens to current smoothings when deleting datasets)
 
             smoothing = self.smoothing
             shifted = self.handler.energyShiftEnabled
@@ -527,7 +527,7 @@ def loadUI(UIHandler, env):
             self.visualRefresh(force=True, noAutoRange=True)
 
         def addPlots(self):
-            #self.slider.setMinMax(1, self.env.getMaxSize()//2+1)  # requires more thinking (what happens to current smoothings when deleting datasets)
+            self.slider.setMinMax(1, self.env.getMaxSize()//2+1)  # requires more thinking (what happens to current smoothings when deleting datasets)
             # also what happens if the smoothing value is larger than the new added dataset's size
             smoothing = self.smoothing
             for data in self.getWatchedData():
