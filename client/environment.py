@@ -232,6 +232,12 @@ class Environment(EventClass):
             logger.error(
                 f"Shape mismatch when loading prepredicted model. Model energy shape: {E.shape}, dataset energy shape: {eDataset.shape}"
             )
+            logger.error(
+                "Prediction load failed, you have probably selected the wrong prediction for the designated dataset. "
+                "Please try again and choose the correct prediction file according to the dataset selected "
+                "in the file filter dropdown."
+            )
+            return
 
         modelKey = md5FromArraysAndStrings(E, F)
 
@@ -359,9 +365,6 @@ class Environment(EventClass):
                    selected_force_key=None, prediction_keys=None):
         """Load dataset and create ghost models for prediction keys."""
         #logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
-        if path is None:
-            logger.warning("No path was selected, please try again")
-            return None
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
@@ -382,14 +385,8 @@ class Environment(EventClass):
                     prediction_keys=prediction_keys,
                     show_dialog=False  # Dialog already shown on main thread
                 )
-            except ase.io.formats.UnknownFileTypeError:
-                if os.path.isfile(path):
-                    extension = os.path.splitext(path)[1]
-                    logger.error(f"The ase dataset loader could not recognize the specified dataset with extension:"
-                                 f"'{extension}'.\nIf you are choosing a file with .npz extension, please try again "
-                                 f"and *.npz in the file type filter dropdown")
-                else:
-                    logger.error(f"The chosen path for dataset is not pointing to a valid file, but a directory!")
+            except Exception as e:
+                logger.error(f"Failed to load dataset {path} in method 'loadDataset'")
                 return None
         else:
             result = self.datasetTypes[datasetType](path)
@@ -909,6 +906,11 @@ class Environment(EventClass):
         keysToGenerate = {}
         for cacheKey in queue.copy():
             (dataTypeKey, model, dataset) = self.cacheKeyToComponents(cacheKey)
+
+            if ("cluster" in cacheKey) and hasattr(dataset, 'isVariable') and dataset.isVariable:
+                logger.info("The cluster errors feature is not supported for variable datasets")
+                queue.discard(cacheKey)
+                continue
 
             if self.hasCacheKey(cacheKey):
                 queue.discard(cacheKey)
