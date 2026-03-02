@@ -1,3 +1,5 @@
+import ase.io.formats
+
 from events import EventClass
 from datasetLoaders.loader import (
     SubDataset,
@@ -59,6 +61,8 @@ class Environment(EventClass):
         self.eventSubscribe(
             "SUBDATASET_INDICES_CHANGED", self.deleteCacheByDataset
         )
+
+        self.maxDatasetSize = 0  # To handle the smoothing maximum value in plots
 
     #############
     ## DATA TYPES
@@ -261,9 +265,26 @@ class Environment(EventClass):
     def initialiseDatasetType(self, datasetType):
         self.datasetTypes[datasetType.datasetName] = datasetType
 
+    def updateMaxSize(self, on_deletion, dataset):
+        if on_deletion:
+            maximum = 0
+            for ds in self.datasets.values():
+                if ds.N > maximum:
+                    maximum = ds.N
+            self.maxDatasetSize = maximum
+            logger.info(f"Maximum dataset size updated to : {maximum}")
+        else:
+            if dataset.N > self.maxDatasetSize:
+                self.maxDatasetSize = dataset.N
+                logger.info(f"Maximum dataset size updated to : {dataset.N}")
+
+    def getMaxSize(self):
+        return self.maxDatasetSize
+
     def setNewDataset(self, dataset):
         self.datasets[dataset.fingerprint] = dataset
         dataset.loaded = True
+        self.updateMaxSize(False, dataset)
         self.eventPush("DATASET_LOADED", dataset.fingerprint)
 
     def getDataset(self, key):
@@ -293,6 +314,7 @@ class Environment(EventClass):
         dataset.onDelete()
         del self.datasets[key]
         logger.info(f"Dataset {key} deleted")
+        self.updateMaxSize(on_deletion=True, dataset=None)
         self.eventPush("DATASET_DELETED", key)
 
     def getAllDatasetKeys(self):
@@ -336,11 +358,15 @@ class Environment(EventClass):
     def loadDataset(self, path, datasetType, taskID=None, selected_energy_key=None,
                    selected_force_key=None, prediction_keys=None):
         """Load dataset and create ghost models for prediction keys."""
+        #logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
+        if path is None:
+            logger.warning("No path was selected, please try again")
+            return None
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
 
-        if datasetType not in self.datasetTypes:
+        if datasetType not in self.datasetTypes:  # This if statement seems to be useless
             logger.error(
                 f"Tried to load dataset, but dataset type {datasetType} not recognised"
             )
@@ -348,13 +374,23 @@ class Environment(EventClass):
 
         # Load dataset - pass selected keys to ASE loader
         if datasetType == "ase (auto)":
-            result = self.datasetTypes[datasetType](
-                path,
-                selected_energy_key=selected_energy_key,
-                selected_force_key=selected_force_key,
-                prediction_keys=prediction_keys,
-                show_dialog=False  # Dialog already shown on main thread
-            )
+            try:
+                result = self.datasetTypes[datasetType](
+                    path,
+                    selected_energy_key=selected_energy_key,
+                    selected_force_key=selected_force_key,
+                    prediction_keys=prediction_keys,
+                    show_dialog=False  # Dialog already shown on main thread
+                )
+            except ase.io.formats.UnknownFileTypeError:
+                if os.path.isfile(path):
+                    extension = os.path.splitext(path)[1]
+                    logger.error(f"The ase dataset loader could not recognize the specified dataset with extension:"
+                                 f"'{extension}'.\nIf you are choosing a file with .npz extension, please try again "
+                                 f"and *.npz in the file type filter dropdown")
+                else:
+                    logger.error(f"The chosen path for dataset is not pointing to a valid file, but a directory!")
+                return None
         else:
             result = self.datasetTypes[datasetType](path)
 
