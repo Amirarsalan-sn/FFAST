@@ -338,7 +338,7 @@ class Environment(EventClass):
             return ds
 
     def taskLoadDataset(self, path, datasetType, selected_energy_key=None,
-                       selected_force_key=None, prediction_keys=None):
+                       selected_force_key=None, prediction_keys=None, slice_num=0):
         """Load dataset and optionally load predictions from same file.
 
         Args:
@@ -354,7 +354,8 @@ class Environment(EventClass):
             kwargs={
                 'selected_energy_key': selected_energy_key,
                 'selected_force_key': selected_force_key,
-                'prediction_keys': prediction_keys
+                'prediction_keys': prediction_keys,
+                'slice_num': slice_num
             },
             visual=True,
             name="Loading dataset",
@@ -362,7 +363,7 @@ class Environment(EventClass):
         )
 
     def loadDataset(self, path, datasetType, taskID=None, selected_energy_key=None,
-                   selected_force_key=None, prediction_keys=None):
+                   selected_force_key=None, prediction_keys=None, slice_num=0):
         """Load dataset and create ghost models for prediction keys."""
         #logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
         if not os.path.exists(path):
@@ -383,7 +384,8 @@ class Environment(EventClass):
                     selected_energy_key=selected_energy_key,
                     selected_force_key=selected_force_key,
                     prediction_keys=prediction_keys,
-                    show_dialog=False  # Dialog already shown on main thread
+                    show_dialog=False,  # Dialog already shown on main thread
+                    slice_num=slice_num
                 )
             except Exception as e:
                 logger.error(f"Failed to load dataset {path} in method 'loadDataset'")
