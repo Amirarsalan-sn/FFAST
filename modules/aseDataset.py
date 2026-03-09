@@ -392,7 +392,7 @@ def loadData(env):
         saveFormats = ["db", "xyz", "extxyz", "traj", "vasp", "dftb"]
 
         def __call__(self, path, selected_energy_key=None, selected_force_key=None,
-                     prediction_keys=None, show_dialog=True):
+                     prediction_keys=None, show_dialog=True, slice_num=0):
             """Load ASE dataset with optional key selection.
 
             Args:
@@ -401,12 +401,17 @@ def loadData(env):
                 selected_force_key: Pre-selected force key for reference
                 prediction_keys: List of (energy_key, force_key, model_name) tuples
                 show_dialog: Whether to show selection dialog (False when loading from session)
+                slice_num: The number for skip, used for loading big datasets
 
             Returns:
                 tuple: (dataset_loader, prediction_keys) or (None, None) if cancelled
             """
             # Read file ONCE
-            atomsList = ase.io.read(path, index=":")
+            if slice_num == 0:
+                atomsList = ase.io.read(path, index=":")
+            else:
+                atomsList = ase.io.read(path, index=slice(0, None, slice_num))
+
             atom_counts = [len(atoms) for atoms in atomsList]
 
             # Handle key selection first (if dialog needed)
