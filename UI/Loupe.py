@@ -8,6 +8,7 @@ from UI.Templates import (
     Slider,
     ToolButton,
 )
+from UI.menuHandler import MenuHandler
 from PySide6 import QtCore, QtGui, QtWidgets
 import logging
 from vispy import scene
@@ -576,6 +577,15 @@ class Loupe(Widget, EventChildClass):
 
         # EVENTS
         self.eventSubscribe("SUBDATASET_INDICES_CHANGED", self.onSubChanged)
+
+        #MENU BAR
+        self.mBar = QtWidgets.QMenuBar(self)
+        self.menuHandler = MenuHandler(self)
+        self.layout.setMenuBar(self.mBar)
+
+    # Adding menu bar getter for MenuHandler to be able to properly initialize the menu
+    def menuBar(self):
+        return self.mBar
 
     # SETTINGS
     def initialiseSettings(self):
