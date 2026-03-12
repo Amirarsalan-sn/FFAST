@@ -1,3 +1,5 @@
+import ase.io.formats
+
 from events import EventClass
 from datasetLoaders.loader import (
     SubDataset,
@@ -59,6 +61,8 @@ class Environment(EventClass):
         self.eventSubscribe(
             "SUBDATASET_INDICES_CHANGED", self.deleteCacheByDataset
         )
+
+        self.maxDatasetSize = 0  # To handle the smoothing maximum value in plots
 
     #############
     ## DATA TYPES
@@ -228,6 +232,12 @@ class Environment(EventClass):
             logger.error(
                 f"Shape mismatch when loading prepredicted model. Model energy shape: {E.shape}, dataset energy shape: {eDataset.shape}"
             )
+            logger.error(
+                "Prediction load failed, you have probably selected the wrong prediction for the designated dataset. "
+                "Please try again and choose the correct prediction file according to the dataset selected "
+                "in the file filter dropdown."
+            )
+            return
 
         modelKey = md5FromArraysAndStrings(E, F)
 
@@ -261,9 +271,26 @@ class Environment(EventClass):
     def initialiseDatasetType(self, datasetType):
         self.datasetTypes[datasetType.datasetName] = datasetType
 
+    def updateMaxSize(self, on_deletion, dataset):
+        if on_deletion:
+            maximum = 0
+            for ds in self.datasets.values():
+                if ds.N > maximum:
+                    maximum = ds.N
+            self.maxDatasetSize = maximum
+            logger.info(f"Maximum dataset size updated to : {maximum}")
+        else:
+            if dataset.N > self.maxDatasetSize:
+                self.maxDatasetSize = dataset.N
+                logger.info(f"Maximum dataset size updated to : {dataset.N}")
+
+    def getMaxSize(self):
+        return self.maxDatasetSize
+
     def setNewDataset(self, dataset):
         self.datasets[dataset.fingerprint] = dataset
         dataset.loaded = True
+        self.updateMaxSize(False, dataset)
         self.eventPush("DATASET_LOADED", dataset.fingerprint)
 
     def getDataset(self, key):
@@ -293,6 +320,7 @@ class Environment(EventClass):
         dataset.onDelete()
         del self.datasets[key]
         logger.info(f"Dataset {key} deleted")
+        self.updateMaxSize(on_deletion=True, dataset=None)
         self.eventPush("DATASET_DELETED", key)
 
     def getAllDatasetKeys(self):
@@ -310,7 +338,7 @@ class Environment(EventClass):
             return ds
 
     def taskLoadDataset(self, path, datasetType, selected_energy_key=None,
-                       selected_force_key=None, prediction_keys=None):
+                       selected_force_key=None, prediction_keys=None, slice_num=0):
         """Load dataset and optionally load predictions from same file.
 
         Args:
@@ -326,7 +354,8 @@ class Environment(EventClass):
             kwargs={
                 'selected_energy_key': selected_energy_key,
                 'selected_force_key': selected_force_key,
-                'prediction_keys': prediction_keys
+                'prediction_keys': prediction_keys,
+                'slice_num': slice_num
             },
             visual=True,
             name="Loading dataset",
@@ -334,13 +363,14 @@ class Environment(EventClass):
         )
 
     def loadDataset(self, path, datasetType, taskID=None, selected_energy_key=None,
-                   selected_force_key=None, prediction_keys=None):
+                   selected_force_key=None, prediction_keys=None, slice_num=0):
         """Load dataset and create ghost models for prediction keys."""
+        #logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
 
-        if datasetType not in self.datasetTypes:
+        if datasetType not in self.datasetTypes:  # This if statement seems to be useless
             logger.error(
                 f"Tried to load dataset, but dataset type {datasetType} not recognised"
             )
@@ -348,13 +378,18 @@ class Environment(EventClass):
 
         # Load dataset - pass selected keys to ASE loader
         if datasetType == "ase (auto)":
-            result = self.datasetTypes[datasetType](
-                path,
-                selected_energy_key=selected_energy_key,
-                selected_force_key=selected_force_key,
-                prediction_keys=prediction_keys,
-                show_dialog=False  # Dialog already shown on main thread
-            )
+            try:
+                result = self.datasetTypes[datasetType](
+                    path,
+                    selected_energy_key=selected_energy_key,
+                    selected_force_key=selected_force_key,
+                    prediction_keys=prediction_keys,
+                    show_dialog=False,  # Dialog already shown on main thread
+                    slice_num=slice_num
+                )
+            except Exception as e:
+                logger.error(f"Failed to load dataset {path} in method 'loadDataset'")
+                return None
         else:
             result = self.datasetTypes[datasetType](path)
 
@@ -873,6 +908,11 @@ class Environment(EventClass):
         keysToGenerate = {}
         for cacheKey in queue.copy():
             (dataTypeKey, model, dataset) = self.cacheKeyToComponents(cacheKey)
+
+            if ("cluster" in cacheKey) and hasattr(dataset, 'isVariable') and dataset.isVariable:
+                logger.info("The cluster errors feature is not supported for variable datasets")
+                queue.discard(cacheKey)
+                continue
 
             if self.hasCacheKey(cacheKey):
                 queue.discard(cacheKey)

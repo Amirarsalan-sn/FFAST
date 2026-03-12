@@ -94,6 +94,9 @@ class MenuHandler(EventClass):
         self.eventPush("QUIT_EVENT")
 
     def onDatasetLoad(self):
+        import logging
+        logger = logging.getLogger("FFAST")
+
         env = self.handler.env
         workdir = self.handler.workdir
         fileTypes = sorted(list(env.datasetTypes.keys()))
@@ -103,7 +106,9 @@ class MenuHandler(EventClass):
         path, typ = customFileDialog(
             self.handler.window, fileTypes=fileTypes, extensions=extensions, directory=workdir
         )
-
+        if path is None:
+            logger.warning("No path was selected, please try again later")
+            return
         # For ASE datasets, show key selection dialog on main thread (before threaded task)
         selected_energy_key = None
         selected_force_key = None
@@ -119,8 +124,21 @@ class MenuHandler(EventClass):
 
             selected_energy_key, selected_force_key, prediction_keys = result
 
+        # Here comes the part where we identify the slicing delimiter for proper load of large datasets
+        size_gb = os.path.getsize(path)//1_000_000_000
+        slice_num = 0
+        if 1 <= size_gb <= 5:
+            slice_num = 10  # read and then skip 10 atoms.
+            logger.info(f"Moderate size file (1 to 5 GB), setting the slice number to {slice_num}")
+        elif 5 < size_gb <= 10:
+            slice_num = 100  # skip 100
+            logger.info(f"Big file (5 to 10 GB), setting the slice number to {slice_num}")
+        elif size_gb > 10:
+            slice_num = 1000
+            logger.info(f"Big file (10 to inf GB), setting the slice number to {slice_num}")
+
         env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                           selected_force_key=selected_force_key, prediction_keys=prediction_keys)
+                           selected_force_key=selected_force_key, prediction_keys=prediction_keys, slice_num=slice_num)
 
     def _showASEKeySelectionDialog(self, path, for_predictions=False):
         """Show ASE key selection dialog on main thread.
@@ -202,8 +220,11 @@ class MenuHandler(EventClass):
                 return None, None, None
 
         except Exception as e:
-            logger.error(f"Error showing ASE key selection dialog: {e}")
-            return None, None, []
+            logger.error(f"Unable to read file: {path}. Error showing ASE key selection dialog: {e}")
+            logger.error(f"The ase dataset loader could not recognize the specified dataset:"
+                         f"'{path}'.\nIf you are choosing a file with .npz extension, please try again "
+                         f"and choose *.npz in the file type filter dropdown")
+            return None, None, None  # was Nona, Nona, []. (coding bug)
 
     def onModelLoad(self):
         env = self.handler.env
@@ -217,6 +238,9 @@ class MenuHandler(EventClass):
         env.taskLoadModel(path, typ)
 
     def onPrepredictedModelLoad(self):
+        import logging
+        logger = logging.getLogger("FFAST")
+
         env = self.handler.env
         workdir = self.handler.workdir
         names = [x.getName() for x in env.getAllDatasets(excludeSubs=True)]
@@ -224,12 +248,15 @@ class MenuHandler(EventClass):
         extensions = ["*"] * len(names)
         extensions += ["*.npz"] * len(names)
         names += names
-
         path, typ = customFileDialog(
             self.handler.window, fileTypes=names, extensions=extensions, directory=workdir
         )
-        idx = names.index(typ)
 
+        if path is None:
+            logger.warning("No path was selected please try again.")
+            return
+
+        idx = names.index(typ)
         # For ASE files (non-NPZ), show key selection dialog on main thread
         selected_energy_key = None
         selected_force_key = None
