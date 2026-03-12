@@ -132,8 +132,8 @@ class TaskManager(EventClass):
         if threaded:
             co = asyncio.to_thread(func, *args, **kwargs, taskID=taskID)
 
-            async def taskWrapper(c0, taskID):
-                await co
+            async def taskWrapper(c0, taskID):  # this should receive co not c0, but the code still works!!
+                await c0  # changed await co to await c0
                 self.eventPush("TASK_DONE", taskID)
 
             task = loop.create_task(taskWrapper(co, taskID))
