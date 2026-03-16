@@ -1,5 +1,8 @@
 import logging
+import os
 import time
+import ase.io
+from collections import UserList
 from events import EventClass
 
 logger = logging.getLogger("FFAST")
@@ -303,3 +306,95 @@ class ForcesPredictionData(DataType):
         env.setData(fData, "forces", model=model, dataset=dataset)
 
         return True
+
+
+class AtomsList(UserList):
+    """
+    AtomsList class acts as an intermediate cache for large datasets. Just like how CPUs use cache to access larger data
+    in smaller space with more speed, this data structure aims to access large datasets without having to load the
+    complete dataset in memory (RAM)
+    """
+    def __init__(self, path, atoms_chunk=100_000):
+        super().__init__()
+        self.offset = atoms_chunk
+        self.start_index = 0
+        self.path = path
+        self.data = []
+        # First we need to calculate the length of the dataset without reading it completely.
+
+        self.N = self.calc_dataset_length()
+
+        # Then, we need to load the first chunk of data.
+
+        self.load_new_chunk(0)
+
+    def calc_dataset_length(self):
+        size_gb = os.path.getsize(self.path) // 1_000_000_000
+        slice_size = 0
+        if size_gb < 1:
+            logger.info(f'Small dataset identified, no need for caching mechanism.')
+            slice_size = 5 # debug purposes
+        if 1 <= size_gb <= 5:  # change it so that the users choose the slice num
+            slice_size = 10  # read and then skip 10 atoms.
+            logger.info(f"Moderate size file (1 to 5 GB), setting the slice size to {slice_size}")
+        elif 5 < size_gb <= 10:
+            slice_size = 100  # skip 100
+            logger.info(f"Big file (5 to 10 GB), setting the slice size to {slice_size}")
+        elif size_gb > 10:
+            slice_size = 1000
+            logger.info(f"Gigantic file (10 to inf GB), setting the slice size to {slice_size}")
+
+        atoms = ase.io.read(self.path, index=slice(0, None, slice_size))
+        number_of_slice_chunks = len(atoms)
+
+        if number_of_slice_chunks == 0:
+            logger.error(f"Dataset ({self.path}) has no entries!!!")
+            return 0
+
+        remaining_atoms = ase.io.read(self.path, index=slice(slice_size*(number_of_slice_chunks-1), None))
+        dataset_size = slice_size*(number_of_slice_chunks-1) + len(remaining_atoms)
+        del atoms, remaining_atoms
+        return dataset_size
+
+    def load_new_chunk(self, start):
+        self.start_index = start
+        del self.data
+        self.data = ase.io.read(self.path, index=slice(self.start_index, self.start_index+self.offset))
+
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, item):
+        if isinstance(item, slice):
+            logger.warning("slice version of __getitem__ may need more optimization")
+            start, stop, step = item.indices(self.N)
+
+            if (self.start_index <= start) and (stop < self.start_index + self.offset):
+                return self.data[start - self.start_index: stop - self.start_index: step]
+
+            result = []
+            new_offset = (step - (self.offset % step)) + self.offset if self.offset % step != 0 else self.offset
+            while start < stop:
+                self.load_new_chunk(start)
+                if start + new_offset > stop:
+                    result.extend(self.data[:stop-start:step])
+                else:
+                    result.extend(self.data[::step])
+                start += new_offset
+            return result
+        else:
+            if item >= self.N:
+                raise IndexError(f"Index {item} out of range {self.N}")
+            if not (self.start_index <= item < self.start_index + self.offset):
+                self.load_new_chunk(item)
+
+            return self.data[item-self.start_index]
+
+    def __iter__(self):
+        idx = 0
+        while idx < self.N:
+            yield self.__getitem__(idx)
+            idx += 1
+
+    def __contains__(self, item):
+        raise Exception("__contains__() is not yet implemented for class AtomsList...")
