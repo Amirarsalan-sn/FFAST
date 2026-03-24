@@ -124,21 +124,8 @@ class MenuHandler(EventClass):
 
             selected_energy_key, selected_force_key, prediction_keys = result
 
-        # Here comes the part where we identify the slicing delimiter for proper load of large datasets
-        size_gb = os.path.getsize(path)//1_000_000_000
-        slice_num = 0
-        if 1 <= size_gb <= 5:  # change it so that the users choose the slice num
-            slice_num = 10  # read and then skip 10 atoms.
-            logger.info(f"Moderate size file (1 to 5 GB), setting the slice number to {slice_num}")
-        elif 5 < size_gb <= 10:
-            slice_num = 100  # skip 100
-            logger.info(f"Big file (5 to 10 GB), setting the slice number to {slice_num}")
-        elif size_gb > 10:
-            slice_num = 1000
-            logger.info(f"Big file (10 to inf GB), setting the slice number to {slice_num}")
-
         env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                           selected_force_key=selected_force_key, prediction_keys=prediction_keys, slice_num=slice_num)
+                           selected_force_key=selected_force_key, prediction_keys=prediction_keys)
 
     def _showASEKeySelectionDialog(self, path, for_predictions=False):
         """Show ASE key selection dialog on main thread.
