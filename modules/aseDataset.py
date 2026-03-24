@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from datasetLoaders.loader import DatasetLoader, VariableDatasetLoader
 import ase.io
+from ase.io.trajectory import Trajectory
 from collections.abc import Iterable
 
 logger = logging.getLogger("FFAST")
@@ -17,7 +18,11 @@ class aseDatasetLoader(DatasetLoader):
 
         # Read file only if atomsList not provided (avoid double-read)
         if atomsList is None:
-            self.atomsList = ase.io.read(path, index=":")
+            if path.endswith(".traj"):
+                logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
+                self.atomsList = Trajectory(path)
+            else:
+                self.atomsList = ase.io.read(path, index=":")
         else:
             self.atomsList = atomsList
 
@@ -39,7 +44,6 @@ class aseDatasetLoader(DatasetLoader):
         # Store key selections
         self.selected_energy_key = selected_energy_key
         self.selected_force_key = selected_force_key
-
 
     def ForceKeys(self):
         exAtoms = self.atomsList[0]
@@ -218,7 +222,11 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
 
         # Read file only if atomsList not provided (avoid double-read)
         if atomsList is None:
-            self.atomsList = ase.io.read(path, index=":")
+            if path.endswith(".traj"):
+                logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
+                self.atomsList = Trajectory(path)
+            else:
+                self.atomsList = ase.io.read(path, index=":")
         else:
             self.atomsList = atomsList
 
@@ -370,9 +378,9 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
 
         for i in range(dataset.getN()):
             r = dataset.getCoordinates(i)  # (n_atoms_i, 3)
-            f = dataset.getForces(i)       # (n_atoms_i, 3)
-            e = dataset.getEnergies(i)     # scalar
-            z = dataset.getElements(i)     # (n_atoms_i,)
+            f = dataset.getForces(i)  # (n_atoms_i, 3)
+            e = dataset.getEnergies(i)  # scalar
+            z = dataset.getElements(i)  # (n_atoms_i,)
             zStr = [dataset.zIntToZStr[x] for x in z]
 
             atom = Atoms(positions=r, symbols=zStr)
@@ -391,8 +399,28 @@ def loadData(env):
         datasetFileExtension = "*"
         saveFormats = ["db", "xyz", "extxyz", "traj", "vasp", "dftb"]
 
-        def __call__(self, path, selected_energy_key=None, selected_force_key=None,
-                     prediction_keys=None, show_dialog=True, slice_num=0):
+        def check_homogeneity(self, atoms_list):
+            """
+            Assume there are only two molecular structures in the world, then in a variable dataset the probability that
+            two random drawn molecules are the same would be 1/2. Therefore, the probability that 3 random drawn
+            molecules are the same would be 1/8. If we do this random comparison 20 times then the probability that at
+            every random selection, all of the molecules are the same would be (1/8)^20 ~ 0. That's how this method
+            guess with almost certainty whether a dataset is variable or fixed without iterating through the whole
+            dataset.
+            :param atoms_list: the dataset.
+            :return: whether the dataset is homogeneous or not.
+            """
+            for i in range(20):
+                temp_atoms_list = []
+                for j in np.random.choice(len(atoms_list), size=3, replace=False):
+                    temp_atoms_list.append(atoms_list[j].get_chemical_formula())
+                if len(set(temp_atoms_list)) != 1:
+                    return False
+
+            return True
+
+        def __call__(self, path: str, selected_energy_key=None, selected_force_key=None,
+                     prediction_keys=None, show_dialog=True):
             """Load ASE dataset with optional key selection.
 
             Args:
@@ -401,23 +429,25 @@ def loadData(env):
                 selected_force_key: Pre-selected force key for reference
                 prediction_keys: List of (energy_key, force_key, model_name) tuples
                 show_dialog: Whether to show selection dialog (False when loading from session)
-                slice_num: The number for skip, used for loading big datasets
 
             Returns:
                 tuple: (dataset_loader, prediction_keys) or (None, None) if cancelled
             """
             # Read file ONCE
-            if slice_num == 0:
-                atomsList = ase.io.read(path, index=":")
+            if path.endswith(".traj"):
+                logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
+                atomsList = Trajectory(path)
             else:
-                atomsList = ase.io.read(path, index=slice(0, None, slice_num))
+                atomsList = ase.io.read(path, index=":")
 
-            atom_counts = [len(atoms) for atoms in atomsList]
-
+            # atom_counts = [len(atoms) for atoms in atomsList] --> super inefficient for large datasets because it
+            # literally creates a copy of the entire dataset on RAM, just to check whether the dataset is variable or
+            # fixed. Instead, the following probabilistic method:
+            fixed_or_variable = self.check_homogeneity(atomsList)
             # Handle key selection first (if dialog needed)
             if show_dialog and (selected_energy_key is None or selected_force_key is None):
                 # Create temporary loader just to detect keys and show dialog
-                if len(set(atom_counts)) == 1:
+                if fixed_or_variable:
                     temp_loader = aseDatasetLoader(path, atomsList=atomsList)
                 else:
                     temp_loader = VariableASEDatasetLoader(path, atomsList=atomsList)
@@ -439,9 +469,9 @@ def loadData(env):
                     prediction_keys = selection['predictions']
 
             # Create loader with selected keys passed to constructor
-            if len(set(atom_counts)) == 1:
+            if fixed_or_variable == 1:
                 # Uniform dataset
-                logger.info(f"Loading uniform ASE dataset: {len(atomsList)} molecules, {atom_counts[0]} atoms each")
+                logger.info(f"Loading uniform ASE dataset: {len(atomsList)} molecules, {len(atomsList[0])} atoms each")
                 loader = aseDatasetLoader(
                     path,
                     atomsList=atomsList,
@@ -450,7 +480,8 @@ def loadData(env):
                 )
             else:
                 # Variable dataset
-                logger.info(f"Loading variable ASE dataset: {len(atomsList)} molecules, {min(atom_counts)}-{max(atom_counts)} atoms")
+                logger.info(
+                    f"Loading variable ASE dataset: {len(atomsList)} molecules.")
                 loader = VariableASEDatasetLoader(
                     path,
                     atomsList=atomsList,
