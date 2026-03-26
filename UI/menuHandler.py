@@ -1,6 +1,6 @@
 from events import EventClass
 from PySide6.QtWidgets import QFileDialog
-from UI.Templates import customFileDialog
+from UI.Templates import customFileDialog, BigDatasetWarningDialog
 import os
 
 
@@ -123,9 +123,46 @@ class MenuHandler(EventClass):
                 return
 
             selected_energy_key, selected_force_key, prediction_keys = result
+        file_size = os.path.getsize(path) // 1_000_000_000
+        slice_num = 0
+        if file_size >= 5:
+            slice_num = self.large_dataset_handle(file_size, logger)
 
-        env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                           selected_force_key=selected_force_key, prediction_keys=prediction_keys)
+        if slice_num == -1:
+            logger.info("load cancelled.")
+            return
+        elif slice_num == 0:
+            env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
+                                selected_force_key=selected_force_key, prediction_keys=prediction_keys)
+        else:
+            logger.info(f"loading dataset with slice: {slice_num}")
+
+    def large_dataset_handle(self, file_size, logger):
+        from PySide6.QtWidgets import QDialog
+
+        dialog = BigDatasetWarningDialog(file_size, self.handler.window)
+        result = dialog.exec()
+        if result == QDialog.Accepted:
+            slice_num = dialog.get_slice_number()
+            if dialog.user_clicked_pick_samples:
+                try:
+                    slice_num = int(slice_num)
+                    if slice_num >= 0:
+                        return slice_num
+                    else:
+                        logger.info("Invalid slice number entered, load abort.")
+                        return -1
+                except (ValueError, TypeError):
+                    logger.info("Invalid slice number entered, load abort.")
+                    return -1
+            else:
+                logger.info("User decided to load the whole dataset.")
+                return 0
+        else:
+            logger.info("User cancelled the load operation.")
+            return -1
+
+
 
     def _showASEKeySelectionDialog(self, path, for_predictions=False):
         """Show ASE key selection dialog on main thread.

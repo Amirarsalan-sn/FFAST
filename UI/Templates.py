@@ -2,6 +2,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from config.uiConfig import config, configStyleSheet
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QWidget, QTabWidget, QFileDialog
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QLineEdit,
+    QDialogButtonBox,
+)
 from config.uiConfig import config, getIcon
 from PySide6.QtWidgets import QSizePolicy
 import pyqtgraph
@@ -1766,3 +1773,89 @@ def customFileDialog(parent, fileTypes=None, extensions=None, save=False, direct
 
         filterIndex = filterList.index(selectedFilter)
         return fileName, fileTypes[filterIndex]
+
+
+class BigDatasetWarningDialog(QDialog):
+    def __init__(self, file_size_mb, parent=None):
+        super().__init__(parent)
+        self.user_clicked_pick_samples = False
+        self.setWindowTitle("Attention")
+        self.resize(700, 250)
+        self.setModal(True)
+
+        self.file_size_mb = file_size_mb  # assume 1500 or whatever you measured
+
+        layout = QVBoxLayout()
+
+        # Warning text
+        msg = (
+            "The dataset that you selected is very big. "
+            "For efficient processing, you might want to select samples from the dataset "
+            "(pick every 10 atomic structures or every 100, etc.). "
+            "If you are sure that your system can handle this dataset just press OK, "
+            "otherwise write your desired slice number in the box below and select "
+            "'Pick samples'. "
+            "If your system does not have enough resources, you still can press OK "
+            "but it will take a lot of time for the application to load and process "
+            "your dataset."
+        )
+
+        label = QLabel(msg)
+        label.setWordWrap(True)
+        label.setAlignment(Qt.AlignTop)
+        layout.addWidget(label)
+
+        # Input field
+        self.slice_input = QLineEdit()
+        self.slice_input.setPlaceholderText("e.g., 10, 100, ...")
+        layout.addWidget(self.slice_input)
+
+        # RAM‑usage feedback label
+        self.ram_hint = QLabel("RAM usage estimate will appear here.")
+        self.ram_hint.setStyleSheet("color: #666; font-size: 10pt;")
+        layout.addWidget(self.ram_hint)
+
+        # Buttons
+        button_box = QDialogButtonBox()
+        button_box.addButton("OK", QDialogButtonBox.AcceptRole)
+        pick_btn = button_box.addButton("Pick samples", QDialogButtonBox.ActionRole)
+
+        layout.addWidget(button_box)
+        self.setLayout(layout)
+
+        # Connect slice input text change
+        self.slice_input.textChanged.connect(self.update_ram_hint)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        button_box.clicked.connect(self.on_button_clicked)
+        pick_btn.clicked.connect(self.accept)
+
+    def on_button_clicked(self, button):
+        if button.text() == "Pick samples":
+            self.user_clicked_pick_samples = True
+
+    def update_ram_hint(self):
+        text = self.slice_input.text().strip()
+        if text:
+            try:
+                slice_num = int(text)
+                if slice_num <= 0:
+                    hint = "Slice number must be a positive integer."
+                else:
+                    effective_size = self.file_size_mb / slice_num
+                    hint = (
+                        f"For this slice factor, you require approximately "
+                        f"{2*effective_size:.2f} GB of RAM (dataset itself+ its prediction dataset in future)."
+                    )
+            except ValueError:
+                hint = "Please enter a valid integer slice number."
+        else:
+            hint = "RAM usage estimate will appear here."
+
+        self.ram_hint.setText(hint)
+
+    def get_slice_number(self):
+        text = self.slice_input.text().strip()
+        if text:
+            return text
+        return None
