@@ -429,8 +429,11 @@ class AtomsList(UserList):
                 start += new_offset
             return result
         else:
-            if item >= self.N:
+            item = item if item >= 0 else item + self.N
+
+            if item >= self.N or item < 0:
                 raise IndexError(f"Index {item} out of range {self.N}")
+
             if not (self.start_index <= item < self.start_index + self.offset):
                 self.load_new_chunk(item)
 
