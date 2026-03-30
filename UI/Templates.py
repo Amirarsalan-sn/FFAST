@@ -1792,7 +1792,7 @@ class BigDatasetWarningDialog(QDialog):
             "The dataset that you selected is very big. "
             "For efficient processing, you might want to select samples from the dataset "
             "(pick every 10 atomic structures or every 100, etc.). "
-            "If you are sure that your system can handle this dataset just press OK, "
+            "If you are sure that your system can handle this dataset just press 'Load as a whole', "
             "otherwise write your desired slice number in the box below and select "
             "'Pick samples'. "
             "If your system does not have enough resources, you still can press OK "
@@ -1817,7 +1817,7 @@ class BigDatasetWarningDialog(QDialog):
 
         # Buttons
         button_box = QDialogButtonBox()
-        button_box.addButton("OK", QDialogButtonBox.AcceptRole)
+        button_box.addButton("Load as a whole", QDialogButtonBox.AcceptRole)
         pick_btn = button_box.addButton("Pick samples", QDialogButtonBox.ActionRole)
 
         layout.addWidget(button_box)

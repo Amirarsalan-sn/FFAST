@@ -123,7 +123,7 @@ class MenuHandler(EventClass):
                 return
 
             selected_energy_key, selected_force_key, prediction_keys = result
-        file_size = os.path.getsize(path) // 1_000_000_000
+        file_size = os.path.getsize(path) / 1_000_000_000
         slice_num = 0
         if file_size >= 5:
             slice_num = self.large_dataset_handle(file_size, logger)
@@ -133,9 +133,12 @@ class MenuHandler(EventClass):
             return
         elif slice_num == 0:
             env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                                selected_force_key=selected_force_key, prediction_keys=prediction_keys)
+                                selected_force_key=selected_force_key, prediction_keys=prediction_keys, slice_num=0)
         else:
             logger.info(f"loading dataset with slice: {slice_num}")
+            env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
+                                selected_force_key=selected_force_key, prediction_keys=prediction_keys,
+                                slice_num=slice_num)
 
     def large_dataset_handle(self, file_size, logger):
         from PySide6.QtWidgets import QDialog

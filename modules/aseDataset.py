@@ -2,6 +2,7 @@ import os
 import logging
 import numpy as np
 from datasetLoaders.loader import DatasetLoader, VariableDatasetLoader
+from client.dataType import AtomsList
 import ase.io
 from ase.io.trajectory import Trajectory
 from collections.abc import Iterable
@@ -18,11 +19,12 @@ class aseDatasetLoader(DatasetLoader):
 
         # Read file only if atomsList not provided (avoid double-read)
         if atomsList is None:
+            logger.warning("atomsList was none, hence loading the entire dataset.")
             if path.endswith(".traj"):
                 logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
                 self.atomsList = Trajectory(path)
             else:
-                self.atomsList = ase.io.read(path, index=":")
+                self.atomsList = AtomsList(path)
         else:
             self.atomsList = atomsList
 
@@ -222,11 +224,12 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
 
         # Read file only if atomsList not provided (avoid double-read)
         if atomsList is None:
+            logger.warning("atomsList was none, hence loading the entire dataset.")
             if path.endswith(".traj"):
                 logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
                 self.atomsList = Trajectory(path)
             else:
-                self.atomsList = ase.io.read(path, index=":")
+                self.atomsList = AtomsList(path)
         else:
             self.atomsList = atomsList
 
@@ -420,7 +423,7 @@ def loadData(env):
             return True
 
         def __call__(self, path: str, selected_energy_key=None, selected_force_key=None,
-                     prediction_keys=None, show_dialog=True):
+                     prediction_keys=None, show_dialog=True, slice_num=0):
             """Load ASE dataset with optional key selection.
 
             Args:
@@ -434,13 +437,16 @@ def loadData(env):
                 tuple: (dataset_loader, prediction_keys) or (None, None) if cancelled
             """
             # Read file ONCE
-            if path.endswith(".traj"):
-                logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
-                atomsList = Trajectory(path)
+            if slice_num == 0:
+                if path.endswith(".traj"):
+                    logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
+                    atomsList = Trajectory(path)
+                else:
+                    atomsList = AtomsList(path)
             else:
-                atomsList = ase.io.read(path, index=":")
+                atomsList = ase.io.read(path, index=slice(0, None, slice_num))
 
-            # atom_counts = [len(atoms) for atoms in atomsList] --> super inefficient for large datasets because it
+            # atom_counts = [len(atoms) for atoms in atomsList] --> inefficient for large datasets because it
             # literally creates a copy of the entire dataset on RAM, just to check whether the dataset is variable or
             # fixed. Instead, the following probabilistic method:
             fixed_or_variable = self.check_homogeneity(atomsList)
@@ -469,7 +475,7 @@ def loadData(env):
                     prediction_keys = selection['predictions']
 
             # Create loader with selected keys passed to constructor
-            if fixed_or_variable == 1:
+            if fixed_or_variable:
                 # Uniform dataset
                 logger.info(f"Loading uniform ASE dataset: {len(atomsList)} molecules, {len(atomsList[0])} atoms each")
                 loader = aseDatasetLoader(
