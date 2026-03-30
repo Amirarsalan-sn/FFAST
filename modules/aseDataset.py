@@ -20,11 +20,7 @@ class aseDatasetLoader(DatasetLoader):
         # Read file only if atomsList not provided (avoid double-read)
         if atomsList is None:
             logger.warning("atomsList was none, hence loading the entire dataset.")
-            if path.endswith(".traj"):
-                logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
-                self.atomsList = Trajectory(path)
-            else:
-                self.atomsList = AtomsList(path)
+            self.atomsList = ase.io.read(path, index=':')
         else:
             self.atomsList = atomsList
 
@@ -225,11 +221,7 @@ class VariableASEDatasetLoader(VariableDatasetLoader):
         # Read file only if atomsList not provided (avoid double-read)
         if atomsList is None:
             logger.warning("atomsList was none, hence loading the entire dataset.")
-            if path.endswith(".traj"):
-                logger.info("Trajectory dataset detected, loading with class ase.io.Trajectory")
-                self.atomsList = Trajectory(path)
-            else:
-                self.atomsList = AtomsList(path)
+            self.atomsList = ase.io.read(path, index=':')
         else:
             self.atomsList = atomsList
 
@@ -443,6 +435,8 @@ def loadData(env):
                     atomsList = Trajectory(path)
                 else:
                     atomsList = AtomsList(path)
+            elif slice_num == -1:
+                atomsList = ase.io.read(path, index=':')
             else:
                 atomsList = ase.io.read(path, index=slice(0, None, slice_num))
 
