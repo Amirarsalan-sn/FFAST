@@ -1,5 +1,5 @@
 import ase.io.formats
-
+from ase.io.trajectory import Trajectory
 from events import EventClass
 from datasetLoaders.loader import (
     SubDataset,
@@ -217,14 +217,31 @@ class Environment(EventClass):
             # Use smart loader to detect uniform vs variable datasets
             import ase.io
             from modules.aseDataset import aseDatasetLoader, VariableASEDatasetLoader
+            def check_homogeneity(atoms_list):
+                for i in range(20):
+                    temp_atoms_list = []
+                    for j in np.random.choice(len(atoms_list), size=3, replace=False):
+                        temp_atoms_list.append(atoms_list[j].get_chemical_formula())
+                    if len(set(temp_atoms_list)) != 1:
+                        return False
+
+                return True
 
             # Read once to detect type
-            atomsList = ase.io.read(path, index=":")
-            atom_counts = [len(atoms) for atoms in atomsList]
+            if path.endswith(".traj"):
+                logger.info("Trajectory prediction dataset detected, loading with class ase.io.Trajectory")
+                atomsList = Trajectory(path)
+            else:
+                atomsList = ase.io.read(path, index=":")
 
-            if len(set(atom_counts)) == 1:
+            # atom_counts = [len(atoms) for atoms in atomsList] --> super inefficient for large datasets because it
+            # literally creates a copy of the entire dataset on RAM, just to check whether the dataset is variable or
+            # fixed. Instead, the following probabilistic method:
+            fixed_or_variable = check_homogeneity(atomsList)
+            if fixed_or_variable:
                 # Uniform dataset
-                logger.info(f"Loading prepredicted data as uniform ASE dataset: {len(atomsList)} molecules, {atom_counts[0]} atoms each")
+                logger.info(
+                    f"Loading prepredicted data as uniform ASE dataset: {len(atomsList)} molecules, {len(atomsList[0])} atoms each")
                 aseObject = aseDatasetLoader(
                     path,
                     atomsList=atomsList,
@@ -233,7 +250,7 @@ class Environment(EventClass):
                 )
             else:
                 # Variable dataset
-                logger.info(f"Loading prepredicted data as variable ASE dataset: {len(atomsList)} molecules, {min(atom_counts)}-{max(atom_counts)} atoms")
+                logger.info(f"Loading prepredicted data as variable ASE dataset: {len(atomsList)} molecules")
                 aseObject = VariableASEDatasetLoader(
                     path,
                     atomsList=atomsList,
@@ -363,9 +380,8 @@ class Environment(EventClass):
             return ds
 
     def taskLoadDataset(self, path, datasetType, selected_energy_key=None,
-                       selected_force_key=None, prediction_keys=None, slice_num=0):
-        """Queue dataset loading so file parsing and prediction import happen off the main loop.
-
+                        selected_force_key=None, prediction_keys=None):
+        """Load dataset and optionally load predictions from same file.
         Args:
             path: Path to dataset file
             datasetType: Type of dataset loader to use
@@ -380,7 +396,6 @@ class Environment(EventClass):
                 'selected_energy_key': selected_energy_key,
                 'selected_force_key': selected_force_key,
                 'prediction_keys': prediction_keys,
-                'slice_num': slice_num
             },
             visual=True,
             name="Loading dataset",
@@ -388,9 +403,9 @@ class Environment(EventClass):
         )
 
     def loadDataset(self, path, datasetType, taskID=None, selected_energy_key=None,
-                   selected_force_key=None, prediction_keys=None, slice_num=0):
-        """Construct a dataset object and optionally bootstrap ghost predictions from the same file."""
-        #logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
+                    selected_force_key=None, prediction_keys=None):
+        """Load dataset and create ghost models for prediction keys."""
+        # logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
@@ -410,7 +425,6 @@ class Environment(EventClass):
                     selected_force_key=selected_force_key,
                     prediction_keys=prediction_keys,
                     show_dialog=False,  # Dialog already shown on main thread
-                    slice_num=slice_num
                 )
             except Exception as e:
                 logger.error(f"Failed to load dataset {path} in method 'loadDataset'")
@@ -711,9 +725,9 @@ class Environment(EventClass):
 
         ## SUBDATSETS
         if (
-            (dataset is not None)
-            and (dataset.isSubDataset)
-            and not self.hasCacheKey(cacheKey, subChecks=False)
+                (dataset is not None)
+                and (dataset.isSubDataset)
+                and not self.hasCacheKey(cacheKey, subChecks=False)
         ):
             ## ATOM FILTERED
             if dataset.isAtomFiltered:
@@ -814,22 +828,22 @@ class Environment(EventClass):
         )
 
     def taskGenerateData(
-        self,
-        dataTypeKey,
-        model=None,
-        dataset=None,
-        threaded=True,
-        visual=False,
-        isComponent=False,
-        componentParent=None,
+            self,
+            dataTypeKey,
+            model=None,
+            dataset=None,
+            threaded=True,
+            visual=False,
+            isComponent=False,
+            componentParent=None,
     ):
         """Deduplicate and queue one data-generation request."""
         # for models that predict energies and forces at the same time (e.g. sGDML)
         # convert force tasks to energy tasks to avoid duplicates
         if (
-            (model is not None)
-            and (model.singlePredict)
-            and (dataTypeKey == "forces")
+                (model is not None)
+                and (model.singlePredict)
+                and (dataTypeKey == "forces")
         ):
             dataTypeKey = "energy"
 
@@ -875,12 +889,12 @@ class Environment(EventClass):
         return canGenerate
 
     def generateData(
-        self,
-        dataTypeKey,
-        model=None,
-        dataset=None,
-        isComponent=False,
-        taskID=None,
+            self,
+            dataTypeKey,
+            model=None,
+            dataset=None,
+            isComponent=False,
+            taskID=None,
     ):
         """Attempt one generation step and defer unresolved work to the dependency queue."""
         dataType = self.getDataType(dataTypeKey)
@@ -1169,7 +1183,7 @@ class Environment(EventClass):
                     prediction_keys = []
                     for ghost_fp, ghost_info in info.get('objects', {}).items():
                         if (ghost_info.get('type') == 'ghost_model' and
-                            ghost_info.get('path') == obj_path):
+                                ghost_info.get('path') == obj_path):
                             prediction_keys.append((
                                 ghost_info['energy_key'],
                                 ghost_info['force_key'],
@@ -1204,7 +1218,8 @@ class Environment(EventClass):
                                 # Load predictions if this is an ASE dataset
                                 if prediction_keys and loader_name == "ase (auto)":
                                     atomsList = dataset.atomsList if hasattr(dataset, 'atomsList') else None
-                                    self._loadPredictionsFromKeys(dataset, obj_path, prediction_keys, atomsList=atomsList)
+                                    self._loadPredictionsFromKeys(dataset, obj_path, prediction_keys,
+                                                                  atomsList=atomsList)
 
                                 break
                         except Exception as e:
@@ -1315,9 +1330,9 @@ class Environment(EventClass):
         for cacheKey in self.cache.keys():
             (dataKey, modelKey, datasetKey) = cacheKey.split("__")
             if (
-                (dataKey == "forces" or dataKey == "energy")
-                and (modelKey not in self.models)
-                and self.datasetExists(datasetKey)
+                    (dataKey == "forces" or dataKey == "energy")
+                    and (modelKey not in self.models)
+                    and self.datasetExists(datasetKey)
             ):
                 model = GhostModelLoader(self, modelKey)
                 model.initialise()
@@ -1383,9 +1398,9 @@ class HeadlessEnvironment(Environment, threading.Thread):
         """Block scripted callers until queued, running, and deferred work has settled."""
         tm = self.tm
         while (
-            (tm.taskQueue.qsize() > 0)
-            or (len(tm.runningTasks) > 0)
-            or (len(self.generationQueue) > 0)
+                (tm.taskQueue.qsize() > 0)
+                or (len(tm.runningTasks) > 0)
+                or (len(self.generationQueue) > 0)
         ) and not self.quitReady:
             if verbose:
                 print("-" * 20)
@@ -1400,7 +1415,7 @@ class HeadlessEnvironment(Environment, threading.Thread):
                         task = tm.getTask(taskID)
                         prog = "?%"
                         if task["progress"] is not None:
-                            prog = f'{task["progress"]*100:.0f}%'
+                            prog = f'{task["progress"] * 100:.0f}%'
 
                         print(
                             f'{prog:<4} {task["name"]:<20}  {task["progressMessage"]}'

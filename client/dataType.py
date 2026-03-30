@@ -1,5 +1,8 @@
 import logging
+import os
 import time
+import ase.io
+from collections import UserList
 from events import EventClass
 
 logger = logging.getLogger("FFAST")
@@ -303,3 +306,159 @@ class ForcesPredictionData(DataType):
         env.setData(fData, "forces", model=model, dataset=dataset)
 
         return True
+
+
+class AtomsList(UserList):
+    """
+    AtomsList class acts as an intermediate cache for large datasets. Just like how CPUs use cache to access larger data
+    in smaller space with more speed, this data structure aims to hold large datasets without having to load the
+    complete dataset in memory all at once (RAM).
+    It holds a cache size of 100_000 atoms (by default) and loads data into that cache. When a user wants to access an
+    atom with index i in a specific dataset, if i exists in cache, then the object will be returned, otherwise, a chunk
+    of 100_000 (by default) atoms will be read from the source dataset (containing the requested index at first place)
+    and the requested atom will then be returned. The new chunk will replace the previous one obviously.
+
+    This way we can work with large datasets without occupying several Gigabytes of RAM.
+
+    It can require more computational time in some occasions, like when we encounter a cash miss (atom i is not inside
+    cache), but it surpasses the heavy memory read at the beginning of each dataset load, and uses the memory much more
+    efficiently.
+
+    Args:
+        path (str): the path to the designated dataset.
+        atoms_chunk (int): cache size (in terms of number of atoms).
+    """
+    def __init__(self, path, atoms_chunk=100_000):
+        super().__init__()
+        self.offset = atoms_chunk
+        self.start_index = 0
+        self.path = path
+        self.data = []
+        # First we need to calculate the length of the dataset without reading it completely.
+
+        self.N = self.calc_dataset_length()
+
+        # Then, we need to load the first chunk of data.
+
+        self.load_new_chunk(0)
+
+    def calc_dataset_length(self):
+        """
+        Calculating the number of atoms within a dataset, without loading the entire dataset. This algorithm first
+        reads the dataset with skip steps of N (depending on the size of the source file). The length of the
+        resulting array would be: A = (dataset_length//N)
+        We read one more time starting from index A*N until the end of the dataset (no skipping this time). The length
+        of the resulting array would be: B = (dataset_length%N)
+
+        We know that: X = N*(X//N) + X%N
+
+        Therefore, all we have to do to get the correct length of the whole dataset is to sum A and B.
+
+        :return: length of the dataset.
+        """
+        size_gb = os.path.getsize(self.path) // 1_000_000_000
+        slice_size = 0
+        if size_gb < 1:
+            logger.info(f'Small dataset identified, no need for caching mechanism.')
+            slice_size = 5 # debug purposes
+        if 1 <= size_gb <= 5:  # change it so that the users choose the slice num
+            slice_size = 10  # read and then skip 10 atoms.
+            logger.info(f"Moderate size file (1 to 5 GB), setting the slice size to {slice_size}")
+        elif 5 < size_gb <= 10:
+            slice_size = 100  # skip 100
+            logger.info(f"Big file (5 to 10 GB), setting the slice size to {slice_size}")
+        elif size_gb > 10:
+            slice_size = 1000
+            logger.info(f"Gigantic file (10 to inf GB), setting the slice size to {slice_size}")
+
+        atoms = ase.io.read(self.path, index=slice(0, None, slice_size))
+        number_of_slice_chunks = len(atoms)
+
+        if number_of_slice_chunks == 0:
+            logger.error(f"Dataset ({self.path}) has no entries!!!")
+            return 0
+
+        remaining_atoms = ase.io.read(self.path, index=slice(slice_size*(number_of_slice_chunks-1), None))
+        dataset_size = slice_size*(number_of_slice_chunks-1) + len(remaining_atoms)
+        del atoms, remaining_atoms
+        return dataset_size
+
+    def load_new_chunk(self, start):
+        """
+        Loads a new chunk from source dataset.
+        :param start: starting index in the source dataset.
+        :return: dataset[start: start+chunk]
+        """
+        self.start_index = start
+        del self.data
+        self.data = ase.io.read(self.path, index=slice(self.start_index, self.start_index+self.offset))
+
+    def __len__(self):
+        return self.N
+
+    def __getitem__(self, item):
+        """
+        This is the function which is called when you call the [] operator on an array.
+        This method first checks whether self.start_index <= item < self.start_index + self.offset, if the condition
+        holds, the required atom is inside the cache, so the method just needs to return cache[item-start_index].
+        Otherwise, the methods loads a new chunk (dataset[item: item+chunk]) and replaces it with the old chunk then
+        returns the required item.
+
+        If item is a slice, the method checks whether the cache has all of the indices included in the slice. If it has,
+        it returns them easily. Otherwise, it loads a chunk (starting from the beginning of the slice), extracts
+        the slice indices and moves on until all of the slice indices are fully loaded.
+
+        :param item (int | slice): the index of the required atom in the source dataset.
+        :return: dataset[item]
+        """
+        if isinstance(item, slice):
+            logger.warning("slice version of __getitem__ may need more optimization")
+            start, stop, step = item.indices(self.N)
+
+            if (self.start_index <= start) and (stop < self.start_index + self.offset):
+                return self.data[start - self.start_index: stop - self.start_index: step]
+
+            result = []
+            new_offset = (step - (self.offset % step)) + self.offset if self.offset % step != 0 else self.offset
+            while start < stop:
+                self.load_new_chunk(start)
+                if start + new_offset > stop:  # Indicating it's the last chunk
+                    result.extend(self.data[:stop-start:step])
+                else:
+                    result.extend(self.data[::step])
+                start += new_offset
+            return result
+        else:
+            if item >= self.N:
+                raise IndexError(f"Index {item} out of range {self.N}")
+            if not (self.start_index <= item < self.start_index + self.offset):
+                self.load_new_chunk(item)
+
+            return self.data[item-self.start_index]
+
+    def __iter__(self):
+        """
+        The method which is called whenever the user uses the "for each" operation.
+        for atom in AtomsList('path/to/dataset'):
+            # some process to do
+        :return: Yields an atom object
+        """
+        idx = 0
+        while idx < self.N:
+            yield self.__getitem__(idx)
+            idx += 1
+
+    def __contains__(self, item):
+        """
+        Called when user uses "in" operator.
+
+        if x in atoms:
+            # some process to do
+
+        Not implemented for this application, because it had no usage. It also requires a whole dataset search which
+        makes our caching system inefficient.
+        
+        :param item: The queried atom.
+        :return: True or False.
+        """
+        raise Exception("__contains__() is not yet implemented for class AtomsList...")
