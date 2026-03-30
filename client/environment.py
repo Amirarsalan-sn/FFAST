@@ -233,11 +233,16 @@ class Environment(EventClass):
             if slice_num is not None and slice_num > 0:
                 logger.info(f"Loading dataset with slice number of: {slice_num}")
                 atomsList = ase.io.read(path, index=slice(0, None, slice_num))
-            elif path.endswith(".traj"):
-                logger.info("Trajectory prediction dataset detected, loading with class ase.io.Trajectory")
-                atomsList = Trajectory(path)
+            elif slice_num is not None and slice_num == 0:
+                logger.info("Loading prediction dataset with caching.")
+                if path.endswith(".traj"):
+                    logger.info("Trajectory prediction dataset detected, loading with class ase.io.Trajectory")
+                    atomsList = Trajectory(path)
+                else:
+                    atomsList = AtomsList(path)
             else:
-                atomsList = AtomsList(path)
+                logger.info("Loading the dataset entirely on RAM.")
+                atomsList = ase.io.read(path, index=':')
 
             # atom_counts = [len(atoms) for atoms in atomsList] --> inefficient for large datasets because it
             # literally creates a copy of the entire dataset on RAM, just to check whether the dataset is variable or
@@ -328,11 +333,11 @@ class Environment(EventClass):
     def getMaxSize(self):
         return self.maxDatasetSize
 
-    def setNewDataset(self, dataset, slice_num=-1):
+    def setNewDataset(self, dataset, slice_num=-2):
         self.datasets[dataset.fingerprint] = dataset
         dataset.loaded = True
-        self.updateMaxSize(False, dataset)
-        if slice_num >= 0:  # to avoid adding slices for sub-datasets.
+        if slice_num != -2:  # to avoid adding slices for sub-datasets.
+            self.updateMaxSize(False, dataset)
             self.dataset_slice_numbers[dataset.fingerprint] = slice_num
         self.eventPush("DATASET_LOADED", dataset.fingerprint)
 
@@ -362,6 +367,9 @@ class Environment(EventClass):
         for cache_key in cache_keys_to_delete:
             del self.cache[cache_key]
             logger.info(f"Deleted cached data: {cache_key}")
+
+        if self.dataset_slice_numbers.get(key) is not None:  # We need to delete its slice number as well
+            del self.dataset_slice_numbers[key]
 
         dataset.onDelete()
         del self.datasets[key]

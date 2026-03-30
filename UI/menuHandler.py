@@ -1,7 +1,41 @@
+import os
+import sys
 from events import EventClass
 from PySide6.QtWidgets import QFileDialog
 from UI.Templates import customFileDialog, BigDatasetWarningDialog
-import os
+from collections.abc import Mapping, Container
+from client.dataType import AtomsList
+
+
+def deep_getsizeof(obj, seen=None):
+    """
+    Function to calculate the size of an object on memory in bites.
+    :param obj: Desired object
+    :param seen: Flag to avoid double counting of objects.
+    :return: Size of the object in bytes.
+    """
+    if seen is None:
+        seen = set()
+
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+
+    size = sys.getsizeof(obj)
+
+    if isinstance(obj, Mapping):
+        size += sum(deep_getsizeof(k, seen) + deep_getsizeof(v, seen) for k, v in obj.items())
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        size += sum(deep_getsizeof(i, seen) for i in obj)
+    elif hasattr(obj, "__dict__"):
+        size += deep_getsizeof(obj.__dict__, seen)
+    elif hasattr(obj, "__slots__"):
+        for slot in obj.__slots__:
+            if hasattr(obj, slot):
+                size += deep_getsizeof(getattr(obj, slot), seen)
+
+    return size
 
 
 class MenuHandler(EventClass):
@@ -124,26 +158,34 @@ class MenuHandler(EventClass):
 
             selected_energy_key, selected_force_key, prediction_keys = result
         file_size = os.path.getsize(path) / 1_000_000_000
-        slice_num = 0
-        if file_size >= 5:
-            slice_num = self.large_dataset_handle(file_size, logger)
+        slice_num = -1  # load entirely on RAM by default
+        if file_size >= 3:
+            slice_num = self.large_dataset_handle(path, logger)
 
-        if slice_num == -1:
+        if slice_num == -2:
             logger.info("load cancelled.")
             return
-        elif slice_num == 0:
-            env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                                selected_force_key=selected_force_key, prediction_keys=prediction_keys, slice_num=0)
-        else:
+        if slice_num > 0:
             logger.info(f"loading dataset with slice: {slice_num}")
-            env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                                selected_force_key=selected_force_key, prediction_keys=prediction_keys,
-                                slice_num=slice_num)
+        env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key, selected_force_key=selected_force_key,
+                            prediction_keys=prediction_keys, slice_num=slice_num)
 
-    def large_dataset_handle(self, file_size, logger):
+    def large_dataset_handle(self, path, logger):
         from PySide6.QtWidgets import QDialog
+        import ase.io
 
-        dialog = BigDatasetWarningDialog(file_size, self.handler.window)
+        logger.info("Large dataset detected, calculating the length.")
+        length = AtomsList.calc_dataset_length_static(path)
+        logger.info(f"Total dataset length: {length}")
+
+        logger.info("Total length calculated, approximating size of each atom in dataset.")
+        temp_dataset = ase.io.read(path, index=slice(0, 1000, None))
+        temp_size = deep_getsizeof(temp_dataset)  # the size of temp_dataset in bytes.
+        avg_per_atom_size = temp_size/1000
+        file_size = length*avg_per_atom_size
+        logger.info(f"Total size of the dataset on RAM would be approximately {file_size/1_000_000_000:.2f} GBs.")
+
+        dialog = BigDatasetWarningDialog(file_size, length, self.handler.window)
         result = dialog.exec()
         if result == QDialog.Accepted:
             slice_num = dialog.get_slice_number()
@@ -154,16 +196,19 @@ class MenuHandler(EventClass):
                         return slice_num
                     else:
                         logger.info("Invalid slice number entered, load abort.")
-                        return -1
+                        return -2
                 except (ValueError, TypeError):
                     logger.info("Invalid slice number entered, load abort.")
-                    return -1
+                    return -2
+            elif dialog.user_clicked_load_no_cache:
+                logger.info("User decided to load the whole dataset without caching.")
+                return -1
             else:
-                logger.info("User decided to load the whole dataset.")
+                logger.info("User decided to load the whole dataset with caching.")
                 return 0
         else:
             logger.info("User cancelled the load operation.")
-            return -1
+            return -2
 
 
 
