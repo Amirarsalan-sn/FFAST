@@ -32,6 +32,7 @@ class Environment(EventClass):
     """
 
     def __init__(self, headless=True):
+        """Build the session registries, caches, and event wiring for one environment."""
         super().__init__()
         self.headless = headless
 
@@ -69,15 +70,18 @@ class Environment(EventClass):
     #############
 
     def initialiseDataTypes(self):
+        """Register the built-in prediction data types that other modules depend on."""
         from client.dataType import EnergyPredictionData, ForcesPredictionData
 
         self.registerDataType(EnergyPredictionData)
         self.registerDataType(ForcesPredictionData)
 
     def hasDataType(self, dataTypeKey):
+        """Provide a cheap existence check before code asks for a data type."""
         return dataTypeKey in self.dataTypes
 
     def getDataType(self, dataTypeKey):
+        """Resolve the live data-type instance used for generation and dependency checks."""
         return self.dataTypes.get(dataTypeKey, None)
 
     def registerDataType(self, dataType):
@@ -91,6 +95,7 @@ class Environment(EventClass):
         self.dataTypes[dataType.key] = dataType(self)
 
     def getRegisteredDataType(self, dataTypeKey):
+        """Keep the older accessor name for callers that still use it."""
         return self.dataTypes.get(dataTypeKey, None)
 
     #############
@@ -98,20 +103,25 @@ class Environment(EventClass):
     #############
 
     def initialiseModelType(self, modelType):
+        """Register a model loader class discovered during module loading."""
         self.modelTypes[modelType.modelName] = modelType
 
     def setNewModel(self, model):
+        """Mark a model as available in the session and notify listeners."""
         self.models[model.fingerprint] = model
         model.loaded = True
         self.eventPush("MODEL_LOADED", model.fingerprint)
 
     def getModel(self, key):
+        """Fetch a loaded model by fingerprint."""
         return self.models.get(key, None)
 
     def getModelFromPath(self, path):
+        """Resolve a loaded model through its source path."""
         return self.getModel(self.getKeyFromPath(path))
 
     def deleteModel(self, key):
+        """Remove a model and invalidate every cached artifact produced by it."""
         model = self.getModel(key)
         if model is None:
             return
@@ -135,21 +145,26 @@ class Environment(EventClass):
         self.eventPush("MODEL_DELETED", key)
 
     def modelExists(self, key):
+        """Support quick guard checks before model-specific work."""
         return key in self.models.keys()
 
     def datasetExists(self, key):
+        """Support quick guard checks before dataset-specific work."""
         return key in self.datasets.keys()
 
     def getAllModelKeys(self):
+        """Expose model fingerprints to UI and persistence code."""
         return list(self.models.keys())
 
     def getAllModels(self, excludeGhosts=False):
+        """Return live models, optionally hiding ghost placeholders from callers."""
         if excludeGhosts:
             return [m for m in self.models.values() if not m.isGhost]
         else:
             return list(self.models.values())
 
     def taskLoadModel(self, path, modelType):
+        """Queue model loading so disk I/O and setup do not block the main loop."""
         self.newTask(
             self.loadModel,
             args=(path, modelType),
@@ -159,6 +174,7 @@ class Environment(EventClass):
         )
 
     def loadModel(self, path, modelType, taskID=None):
+        """Validate and instantiate a concrete model from disk."""
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
@@ -179,6 +195,7 @@ class Environment(EventClass):
         logging.info(f"Model `{path}` successfully loaded")
 
     def taskLoadPrepredictedDataset(self, path, datasetKey, selected_energy_key=None, selected_force_key=None):
+        """Queue import of external predictions as cached model outputs for a dataset."""
         self.newTask(
             self.loadPrepredictedDataset,
             args=(path, datasetKey),
@@ -192,6 +209,7 @@ class Environment(EventClass):
         )
 
     def loadPrepredictedDataset(self, path, datasetKey, taskID=None, selected_energy_key=None, selected_force_key=None):
+        """Attach precomputed energies and forces to a dataset as a ghost model."""
         if "npz" in path:
             d = np.load(path, allow_pickle=True)
             E, F = d["E"], d["F"]
@@ -286,6 +304,7 @@ class Environment(EventClass):
     #############
 
     def initialiseDatasetType(self, datasetType):
+        """Register a dataset loader class discovered during module loading."""
         self.datasetTypes[datasetType.datasetName] = datasetType
 
     def updateMaxSize(self, on_deletion, dataset):
@@ -305,18 +324,22 @@ class Environment(EventClass):
         return self.maxDatasetSize
 
     def setNewDataset(self, dataset):
+        """Mark a dataset as available in the session and notify listeners."""
         self.datasets[dataset.fingerprint] = dataset
         dataset.loaded = True
         self.updateMaxSize(False, dataset)
         self.eventPush("DATASET_LOADED", dataset.fingerprint)
 
     def getDataset(self, key):
+        """Fetch a loaded dataset by fingerprint."""
         return self.datasets.get(key, None)
 
     def getDatasetFromPath(self, path):
+        """Resolve a loaded dataset through its source path."""
         return self.getDataset(self.getKeyFromPath(path))
 
     def deleteDataset(self, key):
+        """Remove a dataset and invalidate every cached artifact derived from it."""
         dataset = self.getDataset(key)
         if dataset is None:
             return
@@ -341,11 +364,13 @@ class Environment(EventClass):
         self.eventPush("DATASET_DELETED", key)
 
     def getAllDatasetKeys(self):
+        """Expose active dataset fingerprints to UI and persistence code."""
         ds = self.getAllDatasets()
         return [x.fingerprint for x in ds]
         # return list(self.datasets.keys())
 
     def getAllDatasets(self, subOnly=False, excludeSubs=False):
+        """Return active datasets with optional filtering for subdataset views."""
         ds = [x for x in self.datasets.values() if x.active]
         if subOnly:
             return [x for x in ds if x.isSubDataset]
@@ -357,7 +382,6 @@ class Environment(EventClass):
     def taskLoadDataset(self, path, datasetType, selected_energy_key=None,
                         selected_force_key=None, prediction_keys=None):
         """Load dataset and optionally load predictions from same file.
-
         Args:
             path: Path to dataset file
             datasetType: Type of dataset loader to use
@@ -438,7 +462,7 @@ class Environment(EventClass):
         self.lookForGhosts()
 
     def _loadPredictionsFromKeys(self, dataset, path, prediction_keys, atomsList=None):
-        """Load prediction keys from same file as ghost models.
+        """Materialize extra energy/force columns as ghost-model cache entries.
 
         Args:
             dataset: The loaded dataset
@@ -534,6 +558,7 @@ class Environment(EventClass):
                 continue
 
     def declareSubDataset(self, parent, model, idx, subName):
+        """Create or refresh a logical subset view over a parent dataset."""
 
         # check if already exists
         fp = SubDataset.getFingerprint(SubDataset, parent, model, subName)
@@ -553,6 +578,7 @@ class Environment(EventClass):
             sub.setActive(True)
 
     def freezeSubDataset(self, fingerprint):
+        """Persist the current subdataset selection as its own frozen dataset object."""
         dataset = self.getDataset(fingerprint)
         if (dataset is None) or (not dataset.isSubDataset):
             return
@@ -574,6 +600,7 @@ class Environment(EventClass):
         self.setNewDataset(sub)
 
     def createAtomFilteredDataset(self, dataset, idxs):
+        """Build a per-atom filtered dataset view for atom-level analyses."""
         fp = AtomFilteredDataset.getFingerprint(
             AtomFilteredDataset, dataset, idxs
         )
@@ -591,6 +618,7 @@ class Environment(EventClass):
     #############
 
     def getModelOrDataset(self, key):
+        """Resolve an object key without the caller needing to know its type."""
         model = self.getModel(key)
         if model is None:
             return self.getDataset(key)
@@ -598,9 +626,11 @@ class Environment(EventClass):
             return model
 
     def getObject(self, *args):
+        """Keep a short alias for generic object lookup call sites."""
         return self.getModelOrDataset(*args)
 
     def getKeyFromPath(self, path):
+        """Map a known filesystem path back to the loaded object fingerprint."""
         # check dataset
         for dataset in self.getAllDatasets(excludeSubs=True):
             if dataset.path == path:
@@ -613,6 +643,7 @@ class Environment(EventClass):
         return None
 
     def deleteObject(self, key):
+        """Route generic delete requests to the appropriate registry."""
         if self.datasetExists(key):
             self.deleteDataset(key)
         elif self.modelExists(key):
@@ -623,13 +654,15 @@ class Environment(EventClass):
     #############
 
     def newTask(self, *args, **kwargs):
-        """See newTask method of TaskManager class."""
+        """Send environment work through the shared task queue."""
         return self.tm.queueTask(*args, **kwargs)
 
     def getTask(self, *args, **kwargs):
+        """Expose task state for progress displays and cancellation logic."""
         return self.tm.getTask(*args, **kwargs)
 
     def onTaskCancel(self, taskID):
+        """Keep parent generation requests consistent when a child task is cancelled."""
         task = self.tm.getTask(taskID)
 
         if task["componentParent"] is not None:
@@ -644,9 +677,11 @@ class Environment(EventClass):
             )
 
     def onTaskFailed(self, taskID):
+        """Reuse cancellation cleanup for failed tasks as well."""
         self.onTaskCancel(taskID)
 
     def onTaskDone(self, taskID):
+        """Clear queue bookkeeping once a scheduled task has finished."""
         if taskID in self.queuedTasks:
             self.queuedTasks.remove(taskID)
 
@@ -660,6 +695,7 @@ class Environment(EventClass):
     #############
 
     def getData(self, dataTypeKey, model=None, dataset=None):
+        """Serve cached data, including derived subdataset and atom-filtered views."""
         dataType = self.getRegisteredDataType(dataTypeKey)
 
         if dataType is None:
@@ -719,6 +755,7 @@ class Environment(EventClass):
         return self.cache.get(cacheKey, None)
 
     def setData(self, dataEntity, dataTypeKey, model=None, dataset=None):
+        """Store generated data in the cache and notify subscribers that it changed."""
         dataType = self.getRegisteredDataType(dataTypeKey)
 
         if dataType is None:
@@ -735,6 +772,7 @@ class Environment(EventClass):
         self.eventPush("DATA_UPDATED", cacheKey)
 
     def getCacheKey(self, dataTypeKey, model=None, dataset=None):
+        """Build the canonical cache key for one datatype/model/dataset triple."""
         dataType = self.getRegisteredDataType(dataTypeKey)
         if dataType is None:
             return None
@@ -744,6 +782,7 @@ class Environment(EventClass):
         return cacheKey
 
     def hasCacheKey(self, key, subChecks=True):
+        """Check whether a cache key is available, optionally honoring subdataset fallbacks."""
         if key is None:
             logger.error("Called env.hasCacheKey(key) but key was None!")
             return False
@@ -754,6 +793,7 @@ class Environment(EventClass):
             return key in self.cache
 
     def hasData(self, dataTypeKey, model=None, dataset=None):
+        """Answer whether data exists, including inherited subdataset cases."""
         cacheKey = self.getCacheKey(dataTypeKey, model=model, dataset=dataset)
         hasKey = self.hasCacheKey(cacheKey, subChecks=False)
 
@@ -781,6 +821,7 @@ class Environment(EventClass):
     #############
 
     def taskGenerateDataByKey(self, key, **kwargs):
+        """Schedule data generation when the caller already has a full cache key."""
         (dataTypeKey, model, dataset) = self.cacheKeyToComponents(key)
         self.taskGenerateData(
             dataTypeKey, model=model, dataset=dataset, **kwargs
@@ -796,6 +837,7 @@ class Environment(EventClass):
             isComponent=False,
             componentParent=None,
     ):
+        """Deduplicate and queue one data-generation request."""
         # for models that predict energies and forces at the same time (e.g. sGDML)
         # convert force tasks to energy tasks to avoid duplicates
         if (
@@ -834,9 +876,11 @@ class Environment(EventClass):
         )
 
     async def generateDataAsync(self, *args, **kwargs):
+        """Provide an awaitable adapter for synchronous generation code."""
         self.generateData(*args, **kwargs)
 
     def canGenerateData(self, dataTypeKey, model=None, dataset=None):
+        """Ask the data type whether all dependencies are already satisfied."""
         dataType = self.getDataType(dataTypeKey)
         (deps, canGenerate) = dataType.checkDependencies(
             model=model, dataset=dataset
@@ -852,6 +896,7 @@ class Environment(EventClass):
             isComponent=False,
             taskID=None,
     ):
+        """Attempt one generation step and defer unresolved work to the dependency queue."""
         dataType = self.getDataType(dataTypeKey)
 
         if dataType is None:
@@ -890,6 +935,7 @@ class Environment(EventClass):
             self.eventPush("GENERATION_QUEUE_CHANGED")
 
     def keyIsHaunted(self, dataTypeKey, model=None, dataset=None):
+        """Detect requests that can be satisfied from ghost-model cache instead of a real model."""
         if (model is not None) and (not model.isGhost):
             return False
 
@@ -905,6 +951,7 @@ class Environment(EventClass):
         return False
 
     def addToGenerationQueue(self, key, dataset=None, model=None):
+        """Record a high-level request for later dependency-driven generation."""
         dataType = self.getDataType(key)
         cacheKey = dataType.getCacheKey(model=model, dataset=dataset)
         self.generationQueue.add(cacheKey)
@@ -912,6 +959,7 @@ class Environment(EventClass):
             print(f"Added {cacheKey} to generation queue", flush=True)
 
     async def handleGenerationQueue(self, *args):
+        """Expand queued requests into the lowest runnable dependency tasks."""
         queue = self.generationQueue
 
         if len(queue) == 0:
@@ -968,6 +1016,7 @@ class Environment(EventClass):
             )
 
     def getLowestComponents(self, dataTypeKey, model=None, dataset=None):
+        """Ask the data type for the deepest currently generatable dependency set."""
         dataType = self.getDataType(dataTypeKey)
         compKeys = dataType.getGeneratableComponent(
             model=model, dataset=dataset
@@ -980,6 +1029,7 @@ class Environment(EventClass):
         # ]
 
     def deleteCacheByDataset(self, datasetKey):
+        """Invalidate cached outputs when a dataset's membership changes."""
         toDelete = []
         for key in self.cache.keys():
             if datasetKey in key:
@@ -990,6 +1040,7 @@ class Environment(EventClass):
             self.eventPush("DATA_UPDATED", key)
 
     def getCacheByKey(self, key, subChecks=True):
+        """Resolve a cache key directly, with optional subdataset-aware lookup."""
         if subChecks:
             (dataTypeKey, model, dataset) = self.cacheKeyToComponents(key)
             return self.getData(dataTypeKey, model=model, dataset=dataset)
@@ -997,6 +1048,7 @@ class Environment(EventClass):
             return self.cache.get(key, None)
 
     def cacheKeyToComponents(self, key, dataTypeObject=False):
+        """Decode a cache key back into datatype, model, and dataset references."""
         spl = key.split("__")
         dataTypeKey = spl[0]
         if dataTypeObject:
@@ -1021,6 +1073,7 @@ class Environment(EventClass):
     #############
 
     def save(self, path, taskID=None):
+        """Persist the session cache and object metadata so it can be restored later."""
         if not os.path.exists(path):
             os.mkdir(path)
 
@@ -1086,6 +1139,7 @@ class Environment(EventClass):
             json.dump(info, f, indent=4)
 
     def taskLoad(self, path):
+        """Queue restoration of a previously saved session."""
         self.newTask(
             self.load,
             args=(path,),
@@ -1095,6 +1149,7 @@ class Environment(EventClass):
         )
 
     def load(self, path, taskID=None):
+        """Rebuild datasets, ghost models, and cached entities from a saved session."""
         # LOAD INFO (names etc)
         infoFile = os.path.join(path, "info.json")
         info = None
@@ -1216,9 +1271,11 @@ class Environment(EventClass):
         self.lookForGhosts()
 
     def loadInfo(self, info):
+        """Merge persisted metadata into the current session state."""
         self.info.update(info)
 
     def saveDataset(self, dataset, datasetType, form, path, taskID=None):
+        """Export a dataset through its loader-specific serializer."""
         self.eventPush(
             "TASK_PROGRESS",
             taskID,
@@ -1243,6 +1300,7 @@ class Environment(EventClass):
         datasetClass.saveDataset(dataset, path, format=form, taskID=taskID)
 
     def taskSaveDataset(self, dataset, datasetType, form, path):
+        """Queue dataset export so serialization does not block other work."""
         self.newTask(
             self.saveDataset,
             args=(dataset, datasetType, form, path),
@@ -1256,6 +1314,7 @@ class Environment(EventClass):
     #############
 
     def getColorMix(self, dataset=None, model=None):
+        """Provide a stable display color for combined model/dataset views."""
         if dataset is None and model is None:
             return (255, 255, 255)
         elif dataset is None:
@@ -1266,6 +1325,7 @@ class Environment(EventClass):
             return mixColors(model.color, dataset.color)
 
     def lookForGhosts(self):
+        """Recreate ghost model placeholders for cached prediction-only data."""
 
         for cacheKey in self.cache.keys():
             (dataKey, modelKey, datasetKey) = cacheKey.split("__")
@@ -1279,6 +1339,7 @@ class Environment(EventClass):
                 self.setNewModel(model)
 
     def taskLoadZeroModel(self):
+        """Queue loading of the built-in zero baseline model."""
         self.newTask(
             self.loadZeroModel,
             args=(),
@@ -1288,6 +1349,7 @@ class Environment(EventClass):
         )
 
     def loadZeroModel(self, taskID=None):
+        """Ensure the singleton zero baseline model exists in the session."""
         fp = ZeroModelLoader.fingerprint
         if self.modelExists(fp):
             return
@@ -1296,6 +1358,7 @@ class Environment(EventClass):
         self.setNewModel(model)
 
     def startInteract(self, **kwargs):
+        """Drop into a REPL seeded with useful locals for manual debugging."""
         import code
 
         code.interact(local=kwargs)
@@ -1303,16 +1366,19 @@ class Environment(EventClass):
 
 class HeadlessEnvironment(Environment, threading.Thread):
     def __init__(self):
+        """Combine environment state with a dedicated thread for headless execution."""
         Environment.__init__(self, headless=True)
         threading.Thread.__init__(self)
         self.loop = None
 
     def run(self):
+        """Own the asyncio event loop inside the headless worker thread."""
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self.headlessEventLoop())
 
     async def headlessEventLoop(self):
+        """Drive events, generation, and task execution until shutdown is requested."""
         taskManager = self.tm
         while not self.quitReady:
             await self.eventHandle()
@@ -1325,9 +1391,11 @@ class HeadlessEnvironment(Environment, threading.Thread):
         await taskManager.eventHandle()
 
     def headlessQuit(self):
+        """Signal the headless loop to stop cleanly."""
         self.quitReady = True
 
     def waitForTasks(self, verbose=False, dt=5):
+        """Block scripted callers until queued, running, and deferred work has settled."""
         tm = self.tm
         while (
                 (tm.taskQueue.qsize() > 0)
@@ -1366,6 +1434,7 @@ class HeadlessEnvironment(Environment, threading.Thread):
 
 
 def startHeadlessEnvironment():
+    """Bootstrap modules, logging, and the headless event thread for scripts."""
     from utils import setupLogger
 
     thread = HeadlessEnvironment()
