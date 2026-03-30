@@ -33,7 +33,7 @@ def agglomerative(desc, n, nInitPoints, env, taskID):
     lDescRest = len(descRest)
 
     cinitLabels = AgglomerativeClustering(
-        affinity="euclidean", n_clusters=n, linkage="complete"
+        metric="euclidean", n_clusters=n, linkage="complete"
     ).fit_predict(descInit)
 
     # gather cluster data from labels and return to original indices
