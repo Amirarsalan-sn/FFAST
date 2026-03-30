@@ -9,7 +9,7 @@ from datasetLoaders.loader import (
 from modelLoaders.ghost import GhostModelLoader
 from modelLoaders.zeroModel import ZeroModelLoader
 from tasks import TaskManager
-from client.dataType import DataEntity
+from client.dataType import DataEntity, AtomsList
 from utils import md5FromArraysAndStrings
 from client.dataType import SubDataEntity
 import logging
@@ -41,6 +41,7 @@ class Environment(EventClass):
 
         # Note: might have multiple environments at some point
         self.datasets = {}
+        self.dataset_slice_numbers = {}
         self.models = {}
         self.cache = {}
         self.dataTypes = {}
@@ -228,13 +229,17 @@ class Environment(EventClass):
                 return True
 
             # Read once to detect type
-            if path.endswith(".traj"):
+            slice_num = self.dataset_slice_numbers.get(datasetKey)
+            if slice_num is not None and slice_num > 0:
+                logger.info(f"Loading dataset with slice number of: {slice_num}")
+                atomsList = ase.io.read(path, index=slice(0, None, slice_num))
+            elif path.endswith(".traj"):
                 logger.info("Trajectory prediction dataset detected, loading with class ase.io.Trajectory")
                 atomsList = Trajectory(path)
             else:
-                atomsList = ase.io.read(path, index=":")
+                atomsList = AtomsList(path)
 
-            # atom_counts = [len(atoms) for atoms in atomsList] --> super inefficient for large datasets because it
+            # atom_counts = [len(atoms) for atoms in atomsList] --> inefficient for large datasets because it
             # literally creates a copy of the entire dataset on RAM, just to check whether the dataset is variable or
             # fixed. Instead, the following probabilistic method:
             fixed_or_variable = check_homogeneity(atomsList)
@@ -323,11 +328,12 @@ class Environment(EventClass):
     def getMaxSize(self):
         return self.maxDatasetSize
 
-    def setNewDataset(self, dataset):
-        """Mark a dataset as available in the session and notify listeners."""
+    def setNewDataset(self, dataset, slice_num=-1):
         self.datasets[dataset.fingerprint] = dataset
         dataset.loaded = True
         self.updateMaxSize(False, dataset)
+        if slice_num >= 0:  # to avoid adding slices for sub-datasets.
+            self.dataset_slice_numbers[dataset.fingerprint] = slice_num
         self.eventPush("DATASET_LOADED", dataset.fingerprint)
 
     def getDataset(self, key):
@@ -380,15 +386,15 @@ class Environment(EventClass):
             return ds
 
     def taskLoadDataset(self, path, datasetType, selected_energy_key=None,
-                       selected_force_key=None, prediction_keys=None, slice_num=0):
-        """Queue dataset loading so file parsing and prediction import happen off the main loop.
-
+                        selected_force_key=None, prediction_keys=None, slice_num=0):
+        """Load dataset and optionally load predictions from same file.
         Args:
             path: Path to dataset file
             datasetType: Type of dataset loader to use
             selected_energy_key: Pre-selected energy key for reference (ASE only)
             selected_force_key: Pre-selected force key for reference (ASE only)
             prediction_keys: List of (energy_key, force_key, model_name) tuples
+            :param slice_num: slicing number for sampled load of datasets.
         """
         self.newTask(
             self.loadDataset,
@@ -397,6 +403,7 @@ class Environment(EventClass):
                 'selected_energy_key': selected_energy_key,
                 'selected_force_key': selected_force_key,
                 'prediction_keys': prediction_keys,
+                'slice_num': slice_num
             },
             visual=True,
             name="Loading dataset",
@@ -404,9 +411,9 @@ class Environment(EventClass):
         )
 
     def loadDataset(self, path, datasetType, taskID=None, selected_energy_key=None,
-                   selected_force_key=None, prediction_keys=None, slice_num=0):
-        """Construct a dataset object and optionally bootstrap ghost predictions from the same file."""
-        #logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
+                    selected_force_key=None, prediction_keys=None, slice_num=0):
+        """Load dataset and create ghost models for prediction keys."""
+        # logger.info(f"self.datasetTypes:\n{self.datasetTypes}\narg datasetType:\n{datasetType}")
         if not os.path.exists(path):
             logger.error(f"Tried to load dataset, but path `{path}` not found")
             return None
@@ -426,6 +433,7 @@ class Environment(EventClass):
                     selected_force_key=selected_force_key,
                     prediction_keys=prediction_keys,
                     show_dialog=False,  # Dialog already shown on main thread
+                    slice_num=slice_num
                 )
             except Exception as e:
                 logger.error(f"Failed to load dataset {path} in method 'loadDataset'")
@@ -451,7 +459,7 @@ class Environment(EventClass):
             return
 
         dataset.initialise()
-        self.setNewDataset(dataset)
+        self.setNewDataset(dataset, slice_num)
         logging.info(f"Dataset `{path}` successfully loaded")
 
         # Load predictions as ghost models if specified

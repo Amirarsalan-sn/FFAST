@@ -328,7 +328,7 @@ class AtomsList(UserList):
         path (str): the path to the designated dataset.
         atoms_chunk (int): cache size (in terms of number of atoms).
     """
-    def __init__(self, path, atoms_chunk=100_000):
+    def __init__(self, path, atoms_chunk=300_000):
         super().__init__()
         self.offset = atoms_chunk
         self.start_index = 0
