@@ -46,6 +46,22 @@ class ColorBarVisual(VisualElement):
                 clim=(prop.get("min"), prop.get("max")),
                 label=label,
             )
+        elif hasData and (setting == "Mean Force Norm Error"):
+            label = "Mean force norm" if zeroModel else "Force Norm MAE"
+            self.setParameters(
+                visible=True,
+                cmap=prop.colorMap,
+                clim=(prop.get("normMeanMin"), prop.get("normMeanMax")),
+                label=label,
+            )
+        elif hasData and (setting == "Force Norm Error"):
+            label = "Force norm" if zeroModel else "Force Norm Error"
+            self.setParameters(
+                visible=True,
+                cmap=prop.colorMap,
+                clim=(prop.get("normMin"), prop.get("normMax")),
+                label=label,
+            )
         else:
             self.setParameters(visible=False)
 
@@ -142,6 +158,7 @@ class ForceErrorColorProperty(CanvasProperty):
         atomicMAE = de.get("atomicMAE")
         if atomicMAE is None:
             return
+        atomicErrorNorm = de.get("atomicErrorNorm")  # None for old cached data
 
         # Handle variable vs uniform datasets
         if isinstance(atomicMAE, list):
@@ -176,6 +193,36 @@ class ForceErrorColorProperty(CanvasProperty):
             species_values = np.array(list(species_mean.values()), dtype=float)
             meanMin = np.min(species_values)
             meanMax = np.max(species_values)
+
+            if atomicErrorNorm is not None:
+                norm_sp_sum, norm_sp_cnt = {}, {}
+                for i, norm_i in enumerate(atomicErrorNorm):
+                    z_i = dataset.getElements(i)
+                    for z, n in zip(z_i, norm_i):
+                        norm_sp_sum[z] = norm_sp_sum.get(z, 0.0) + float(n)
+                        norm_sp_cnt[z] = norm_sp_cnt.get(z, 0) + 1
+                norm_sp_mean = {
+                    z: norm_sp_sum[z] / norm_sp_cnt[z] for z in norm_sp_sum
+                }
+                meanAtomicErrorNorm = [
+                    np.array(
+                        [norm_sp_mean[z] for z in dataset.getElements(i)],
+                        dtype=float,
+                    )
+                    for i in range(len(atomicErrorNorm))
+                ]
+                norm_values = np.array(
+                    list(norm_sp_mean.values()), dtype=float
+                )
+                normMeanMin = float(np.min(norm_values))
+                normMeanMax = float(np.max(norm_values))
+                norm_flat = np.concatenate(
+                    [n.flatten() for n in atomicErrorNorm]
+                )
+                normMax = np.percentile(norm_flat, perc)
+            else:
+                meanAtomicErrorNorm = None
+                normMeanMin = normMeanMax = normMax = 0
         else:
             # Uniform dataset: original behavior
             meanAtomicMAE = np.mean(atomicMAE, axis=0)
@@ -184,6 +231,15 @@ class ForceErrorColorProperty(CanvasProperty):
             meanMin = np.min(meanAtomicMAE)
             meanMax = np.max(meanAtomicMAE)
 
+            if atomicErrorNorm is not None:
+                meanAtomicErrorNorm = np.mean(atomicErrorNorm, axis=0)
+                normMax = np.percentile(atomicErrorNorm, perc)
+                normMeanMin = float(np.min(meanAtomicErrorNorm))
+                normMeanMax = float(np.max(meanAtomicErrorNorm))
+            else:
+                meanAtomicErrorNorm = None
+                normMeanMin = normMeanMax = normMax = 0
+
         self.set(
             atomicMAE=atomicMAE,
             meanAtomicMAE=meanAtomicMAE,
@@ -191,6 +247,12 @@ class ForceErrorColorProperty(CanvasProperty):
             max=max_val,
             meanMin=meanMin,
             meanMax=meanMax,
+            atomicErrorNorm=atomicErrorNorm,
+            meanAtomicErrorNorm=meanAtomicErrorNorm,
+            normMin=0,
+            normMax=normMax,
+            normMeanMin=normMeanMin,
+            normMeanMax=normMeanMax,
             isZeroModel=data[0]["model"].fingerprint == "zeroModel",
         )
 
@@ -200,6 +262,8 @@ class ForceErrorColorProperty(CanvasProperty):
         self.clear()
         self.canvas.props["meanForceError"].clear()
         self.canvas.props["forceError"].clear()
+        self.canvas.props["meanForceNormError"].clear()
+        self.canvas.props["forceNormError"].clear()
 
         if "ColorBarVisual" in self.canvas.elements:
             self.canvas.elements["ColorBarVisual"].update()
@@ -214,12 +278,18 @@ class ForceErrorColorProperty(CanvasProperty):
             atomsElement.colorProperty = self.canvas.props["meanForceError"]
         elif hasData and (setting == "Force Error"):
             atomsElement.colorProperty = self.canvas.props["forceError"]
+        elif hasData and (setting == "Mean Force Norm Error"):
+            atomsElement.colorProperty = self.canvas.props["meanForceNormError"]
+        elif hasData and (setting == "Force Norm Error"):
+            atomsElement.colorProperty = self.canvas.props["forceNormError"]
         else:
             cp = atomsElement.colorProperty
             # remove cp if it's one of the force ones
             if (
                 cp is self.canvas.props["meanForceError"]
                 or cp is self.canvas.props["forceError"]
+                or cp is self.canvas.props["meanForceNormError"]
+                or cp is self.canvas.props["forceNormError"]
             ):
                 atomsElement.colorProperty = None
 
@@ -288,6 +358,68 @@ class ForceErrorProperty(CanvasProperty):
         self.clear()
 
 
+class MeanForceNormErrorProperty(CanvasProperty):
+
+    key = "meanForceNormError"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def onDatasetInit(self):
+        self.clear()
+
+    def generate(self):
+        prop = self.canvas.props["forceErrorColor"]
+        meanAtomicErrorNorm = prop.get("meanAtomicErrorNorm")
+        if prop.cleared or meanAtomicErrorNorm is None:
+            return
+        if isinstance(meanAtomicErrorNorm, list):
+            meanAtomicErrorNorm = meanAtomicErrorNorm[self.canvas.index]
+        normMeanMin = prop.get("normMeanMin")
+        normMeanMax = prop.get("normMeanMax")
+        fork = normMeanMax - normMeanMin
+        if fork <= 0:
+            rel = np.zeros_like(meanAtomicErrorNorm, dtype=float)
+        else:
+            rel = (meanAtomicErrorNorm - normMeanMin) / fork
+        colors = prop.getColors(rel)
+        self.set(colors=colors)
+
+    def onNewGeometry(self):
+        if getattr(self.canvas.dataset, "isVariable", False):
+            self.clear()
+
+
+class ForceNormErrorProperty(CanvasProperty):
+
+    key = "forceNormError"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def onDatasetInit(self):
+        self.clear()
+
+    def generate(self):
+        prop = self.canvas.props["forceErrorColor"]
+        atomicErrorNorm = prop.get("atomicErrorNorm")
+        if prop.cleared or atomicErrorNorm is None:
+            return
+        atomicErrorNorm = atomicErrorNorm[self.canvas.index]
+        normMin = prop.get("normMin")
+        normMax = prop.get("normMax")
+        fork = normMax - normMin
+        if fork <= 0:
+            rel = np.zeros_like(atomicErrorNorm, dtype=float)
+        else:
+            rel = (atomicErrorNorm - normMin) / fork
+        colors = prop.getColors(rel)
+        self.set(colors=colors)
+
+    def onNewGeometry(self):
+        self.clear()
+
+
 def addSettings(UIHandler, loupe):
     from UI.Templates import ObjectComboBox
 
@@ -299,11 +431,13 @@ def addSettings(UIHandler, loupe):
 
     pane = loupe.getSettingsPane("ATOMS")
     comboBox = pane.settingsWidgets.get("Coloring")
-    comboBox.addItems(["Mean Force Error", "Force Error"])
+    comboBox.addItems(["Mean Force Error", "Force Error", "Mean Force Norm Error", "Force Norm Error"])
 
     loupe.addCanvasProperty(ForceErrorColorProperty)
     loupe.addCanvasProperty(MeanForceErrorProperty)
     loupe.addCanvasProperty(ForceErrorProperty)
+    loupe.addCanvasProperty(MeanForceNormErrorProperty)
+    loupe.addCanvasProperty(ForceNormErrorProperty)
 
     ## ADD BUTTONS AND SHIT
     # CONTAINER
@@ -317,6 +451,8 @@ def addSettings(UIHandler, loupe):
         lambda: not (
             settings.get("atomColorType") == "Mean Force Error"
             or settings.get("atomColorType") == "Force Error"
+            or settings.get("atomColorType") == "Mean Force Norm Error"
+            or settings.get("atomColorType") == "Force Norm Error"
         )
     )
 
