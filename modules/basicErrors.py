@@ -263,24 +263,27 @@ def loadData(env):
             if hasattr(dataset, 'isVariable') and dataset.isVariable:
                 # Variable dataset: diff is list of arrays
                 atomicMAE_list = []
+                atomicErrorNorm_list = []
                 for diff_mol in diff:
                     # Per-atom MAE for this molecule: (n_atoms_i,)
                     atomicMAE_list.append(np.mean(np.abs(diff_mol), axis=1))
+                    atomicErrorNorm_list.append(np.linalg.norm(diff_mol, axis=1))
 
                 # Global metrics: concatenate all
                 diff_flat = np.vstack(diff)  # (total_atoms, 3)
                 mae = np.mean(np.abs(diff_flat))
                 rmse = np.sqrt(np.mean(diff_flat ** 2))
 
-                de = self.newDataEntity(atomicMAE=atomicMAE_list, mae=mae, rmse=rmse)
+                de = self.newDataEntity(atomicMAE=atomicMAE_list, atomicErrorNorm=atomicErrorNorm_list, mae=mae, rmse=rmse)
             else:
                 # Uniform dataset: diff is (N, M, 3) array
+                atomicErrorNorm = np.linalg.norm(diff, axis=2)  # (N, M)
                 diff = np.abs(diff)
                 atomicMAE = np.mean(diff, axis=2)  # (N, M)
                 mae = np.mean(diff)
                 rmse = np.sqrt(np.mean(diff ** 2))
 
-                de = self.newDataEntity(atomicMAE=atomicMAE, mae=mae, rmse=rmse)
+                de = self.newDataEntity(atomicMAE=atomicMAE, atomicErrorNorm=atomicErrorNorm, mae=mae, rmse=rmse)
 
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
