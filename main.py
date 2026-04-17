@@ -129,7 +129,7 @@ def main(workdir=None):
     event_loop.close()
 
 
-if __name__ == "__main__":
+def cli():
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='FFAST - Force Field Analysis and Visualization Tool')
     parser.add_argument('--workdir', type=str, default=None,
@@ -177,3 +177,7 @@ if __name__ == "__main__":
     except Exception as e:
         logger.exception(e)
         sys.exit()
+
+
+if __name__ == "__main__":
+    cli()
