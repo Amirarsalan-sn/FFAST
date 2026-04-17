@@ -177,25 +177,6 @@ class ForceErrorColorProperty(CanvasProperty):
             return
         atomicErrorNorm = de.get("atomicErrorNorm")  # None for old cached data
 
-        # Get forcesError data for acceleration computation
-        import logging
-        logger = logging.getLogger("FFAST")
-        env = self.canvas.loupe.env
-        forcesErrorDE = env.getData("forcesError", model=model, dataset=dataset)
-        forcesErrorDiff = forcesErrorDE.get("diff") if forcesErrorDE else None
-
-        # Try to get masses for acceleration computation
-        atomicAccelErrorNorm = None
-        try:
-            # Get masses from first geometry
-            if hasattr(dataset, 'atomsList'):
-                masses = dataset.atomsList[0].get_masses()
-            else:
-                masses = None
-        except Exception as e:
-            logger.debug(f"Could not load atomic masses for acceleration computation: {e}")
-            masses = None
-
         # Handle variable vs uniform datasets
         if isinstance(atomicMAE, list):
             # Variable dataset: atomicMAE is list of arrays with different shapes
@@ -256,74 +237,43 @@ class ForceErrorColorProperty(CanvasProperty):
                     [n.flatten() for n in atomicErrorNorm]
                 )
                 normMax = np.percentile(norm_flat, perc)
+
+                if hasattr(dataset, 'atomsList'):
+                    atomicAccelErrorNorm = [
+                        norm_i / dataset.atomsList[i].get_masses()
+                        for i, norm_i in enumerate(atomicErrorNorm)
+                    ]
+                    accel_sp_sum, accel_sp_cnt = {}, {}
+                    for i, accel_i in enumerate(atomicAccelErrorNorm):
+                        z_i = dataset.getElements(i)
+                        for z, a in zip(z_i, accel_i):
+                            accel_sp_sum[z] = accel_sp_sum.get(z, 0.0) + float(a)
+                            accel_sp_cnt[z] = accel_sp_cnt.get(z, 0) + 1
+                    accel_sp_mean = {
+                        z: accel_sp_sum[z] / accel_sp_cnt[z] for z in accel_sp_sum
+                    }
+                    meanAtomicAccelErrorNorm = [
+                        np.array(
+                            [accel_sp_mean[z] for z in dataset.getElements(i)],
+                            dtype=float,
+                        )
+                        for i in range(len(atomicAccelErrorNorm))
+                    ]
+                    accel_sp_values = np.array(list(accel_sp_mean.values()), dtype=float)
+                    accelMeanMin = float(np.min(accel_sp_values))
+                    accelMeanMax = float(np.max(accel_sp_values))
+                    accel_flat = np.concatenate([a.flatten() for a in atomicAccelErrorNorm])
+                    accelMax = float(np.percentile(accel_flat, perc))
+                else:
+                    atomicAccelErrorNorm = None
+                    meanAtomicAccelErrorNorm = None
+                    accelMeanMin = accelMeanMax = accelMax = 0
             else:
                 meanAtomicErrorNorm = None
                 normMeanMin = normMeanMax = normMax = 0
-
-            # Compute acceleration error norms if masses available
-            if hasattr(dataset, 'atomsList'):
-                # Get force differences for acceleration computation
-                forcesError = forcesErrorDiff  # Should be same structure as atomicErrorNorm
-                if forcesError is not None:
-                    accelErrorNorms = []
-                    for i, force_diff_i in enumerate(forcesError):
-                        # force_diff_i shape: (n_atoms_i, 3)
-                        try:
-                            m_i = dataset.atomsList[i].get_masses()
-                            # accel_error = force_diff / mass
-                            accel_diff = force_diff_i / m_i[:, np.newaxis]
-                            # norm of acceleration error per atom
-                            accel_norm_i = np.linalg.norm(accel_diff, axis=1)
-                            accelErrorNorms.append(accel_norm_i)
-                        except:
-                            # Skip if masses unavailable for this molecule
-                            pass
-
-                    if len(accelErrorNorms) > 0:
-                        atomicAccelErrorNorm = accelErrorNorms
-
-                        # Compute statistics for accel norms
-                        accel_sp_sum, accel_sp_cnt = {}, {}
-                        accel_flat = []
-                        for i, accel_i in enumerate(accelErrorNorms):
-                            z_i = dataset.getElements(i)
-                            for z, a in zip(z_i, accel_i):
-                                accel_sp_sum[z] = accel_sp_sum.get(z, 0.0) + float(a)
-                                accel_sp_cnt[z] = accel_sp_cnt.get(z, 0) + 1
-                            accel_flat.extend(accel_i)
-
-                        accel_sp_mean = {
-                            z: accel_sp_sum[z] / accel_sp_cnt[z]
-                            for z in accel_sp_sum if accel_sp_cnt[z] > 0
-                        }
-                        meanAtomicAccelErrorNorm = [
-                            np.array(
-                                [accel_sp_mean.get(z, 0.0) for z in dataset.getElements(i)],
-                                dtype=float,
-                            )
-                            for i in range(len(accelErrorNorms))
-                        ]
-                        if len(accel_sp_mean) > 0:
-                            accel_sp_values = np.array(list(accel_sp_mean.values()), dtype=float)
-                            accelMeanMin = float(np.min(accel_sp_values))
-                            accelMeanMax = float(np.max(accel_sp_values))
-                        else:
-                            accelMeanMin = accelMeanMax = 0.0
-
-                        if len(accel_flat) > 0:
-                            accelMax = np.percentile(np.array(accel_flat), perc)
-                        else:
-                            accelMax = 0.0
-                    else:
-                        atomicAccelErrorNorm = None
-                        meanAtomicAccelErrorNorm = None
-                        accelMeanMin = accelMeanMax = accelMax = 0.0
-                else:
-                    meanAtomicAccelErrorNorm = None
-                    accelMeanMin = accelMeanMax = accelMax = 0.0
-            else:
+                atomicAccelErrorNorm = None
                 meanAtomicAccelErrorNorm = None
-                accelMeanMin = accelMeanMax = accelMax = 0.0
+                accelMeanMin = accelMeanMax = accelMax = 0
         else:
             # Uniform dataset: original behavior
             meanAtomicMAE = np.mean(atomicMAE, axis=0)
@@ -337,31 +287,19 @@ class ForceErrorColorProperty(CanvasProperty):
                 normMax = np.percentile(atomicErrorNorm, perc)
                 normMeanMin = float(np.min(meanAtomicErrorNorm))
                 normMeanMax = float(np.max(meanAtomicErrorNorm))
+
+                masses = dataset.atomsList[0].get_masses()
+                atomicAccelErrorNorm = atomicErrorNorm / masses[np.newaxis, :]
+                meanAtomicAccelErrorNorm = np.mean(atomicAccelErrorNorm, axis=0)
+                accelMax = float(np.percentile(atomicAccelErrorNorm, perc))
+                accelMeanMin = float(np.min(meanAtomicAccelErrorNorm))
+                accelMeanMax = float(np.max(meanAtomicAccelErrorNorm))
             else:
                 meanAtomicErrorNorm = None
                 normMeanMin = normMeanMax = normMax = 0
-
-            # Compute acceleration error norms if masses available
-            if masses is not None:
-                forcesError = forcesErrorDiff
-                logger.info(f"forcesError shape: {forcesError.shape if forcesError is not None else 'None'}")
-                if forcesError is not None:
-                    # forcesError shape: (N, M, 3) for uniform dataset
-                    # masses shape: (M,)
-                    accel_diff = forcesError / masses[np.newaxis, :, np.newaxis]
-                    atomicAccelErrorNorm = np.linalg.norm(accel_diff, axis=2)
-
-                    meanAtomicAccelErrorNorm = np.mean(atomicAccelErrorNorm, axis=0)
-                    accelMax = np.percentile(atomicAccelErrorNorm, perc)
-                    accelMeanMin = float(np.min(meanAtomicAccelErrorNorm))
-                    accelMeanMax = float(np.max(meanAtomicAccelErrorNorm))
-                    logger.info(f"atomicAccelErrorNorm computed: True, accelNormMax: {accelMax}, accelNormMeanMax: {accelMeanMax}")
-                else:
-                    meanAtomicAccelErrorNorm = None
-                    accelMeanMin = accelMeanMax = accelMax = 0.0
-            else:
+                atomicAccelErrorNorm = None
                 meanAtomicAccelErrorNorm = None
-                accelMeanMin = accelMeanMax = accelMax = 0.0
+                accelMeanMin = accelMeanMax = accelMax = 0
 
         self.set(
             atomicMAE=atomicMAE,
