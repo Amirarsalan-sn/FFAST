@@ -39,59 +39,60 @@ def deep_getsizeof(obj, seen=None):
 
 
 class MenuHandler(EventClass):
-    def __init__(self, window):
+    def __init__(self, window, mode="main"):
         self.handler = window.handler
         self.window = window
+        self.mode = mode  # either "main" for the main window or "loupe" for loupes.
         self.connectActions()
 
     def connectActions(self):
         handler, window = (self.handler, self.window)
         mb = window.menuBar()
+        if self.mode == 'main':
+            # FILE
+            File = mb.addMenu("&File")
+            File.addAction("Save", self.onSave, "Ctrl+s")
+            File.addAction("Load", self.onLoad, "Ctrl+l")
 
-        # FILE
-        File = mb.addMenu("&File")
-        File.addAction("Save", self.onSave, "Ctrl+s")
-        File.addAction("Load", self.onLoad, "Ctrl+l")
+            File.addAction("Load Dataset", self.onDatasetLoad, "Ctrl+d")
+            File.addAction("Load Model", self.onModelLoad, "Ctrl+m")
 
-        File.addAction("Load Dataset", self.onDatasetLoad, "Ctrl+d")
-        File.addAction("Load Model", self.onModelLoad, "Ctrl+m")
+            File.addAction("Load Zero Model", self.onZeroModelLoad, "Ctrl+0")
+            File.addAction("Load Prediction", self.onPrepredictedModelLoad, "Ctrl+p")
 
-        File.addAction("Load Zero Model", self.onZeroModelLoad, "Ctrl+0")
-        File.addAction("Load Prediction", self.onPrepredictedModelLoad, "Ctrl+p")
-
-        # File.addAction("Preferences", self.onPreferences)
-        # File.addAction("Exit", self.onExit)
+            # File.addAction("Preferences", self.onPreferences)
+            # File.addAction("Exit", self.onExit)
 
         # LOUPE
         Loupe = mb.addMenu("&Loupe")
         Loupe.addAction("New", self.newLoupe, "Ctrl+n")
         Loupe.addSeparator()
+        if self.mode == "loupe":
+            # Bond Width submenu
+            bondMenu = Loupe.addMenu("Bond Width")
+            bondMenu.addAction("Thin (10)", lambda: self.setBondWidth(10))
+            bondMenu.addAction("Normal (25)", lambda: self.setBondWidth(25))
+            bondMenu.addAction("Thick (50)", lambda: self.setBondWidth(50))
+            bondMenu.addAction("Extra Thick (100)", lambda: self.setBondWidth(100))
+            # TODO: add custom bond width dialog
+            # bondMenu.addSeparator()
+            # bondMenu.addAction("Custom...", self.showBondWidthDialog)
 
-        # Bond Width submenu
-        bondMenu = Loupe.addMenu("Bond Width")
-        bondMenu.addAction("Thin (10)", lambda: self.setBondWidth(10))
-        bondMenu.addAction("Normal (25)", lambda: self.setBondWidth(25))
-        bondMenu.addAction("Thick (50)", lambda: self.setBondWidth(50))
-        bondMenu.addAction("Extra Thick (100)", lambda: self.setBondWidth(100))
-        # TODO: add custom bond width dialog
-        # bondMenu.addSeparator()
-        # bondMenu.addAction("Custom...", self.showBondWidthDialog)
+            # Atom Size submenu
+            atomMenu = Loupe.addMenu("Atom Size")
+            atomMenu.addAction("50%", lambda: self.setAtomSize(0.5))
+            atomMenu.addAction("75%", lambda: self.setAtomSize(0.75))
+            atomMenu.addAction("100%", lambda: self.setAtomSize(1.0))
+            atomMenu.addAction("150%", lambda: self.setAtomSize(1.5))
+            atomMenu.addAction("200%", lambda: self.setAtomSize(2.0))
+            # TODO: add custom atom size dialog
+            # atomMenu.addSeparator()
+            # atomMenu.addAction("Custom...", self.showAtomSizeDialog)
 
-        # Atom Size submenu
-        atomMenu = Loupe.addMenu("Atom Size")
-        atomMenu.addAction("50%", lambda: self.setAtomSize(0.5))
-        atomMenu.addAction("75%", lambda: self.setAtomSize(0.75))
-        atomMenu.addAction("100%", lambda: self.setAtomSize(1.0))
-        atomMenu.addAction("150%", lambda: self.setAtomSize(1.5))
-        atomMenu.addAction("200%", lambda: self.setAtomSize(2.0))
-        # TODO: add custom atom size dialog
-        # atomMenu.addSeparator()
-        # atomMenu.addAction("Custom...", self.showAtomSizeDialog) 
-
-        # Colors submenu
-        colorMenu = Loupe.addMenu("Colors")
-        colorMenu.addAction("Bond Color...", self.showBondColorPicker)
-        colorMenu.addAction("Background Color...", self.showBackgroundColorPicker)
+            # Colors submenu
+            colorMenu = Loupe.addMenu("Colors")
+            colorMenu.addAction("Bond Color...", self.showBondColorPicker)
+            colorMenu.addAction("Background Color...", self.showBackgroundColorPicker)
 
     def onSave(self):
         workdir = self.handler.workdir
@@ -357,21 +358,21 @@ class MenuHandler(EventClass):
         env.taskLoadZeroModel()
 
     def setBondWidth(self, width):
-        """Set bond width for the active Loupe."""
-        loupe = self.handler.getActiveLoupe()
+        """Set bond width for the current Loupe."""
+        loupe = self.window
         if not loupe:
             return
         loupe.settings.setParameter("bondWidth", width, refresh=True)
 
     def setAtomSize(self, scale):
-        """Set atom size scale for the active Loupe."""
-        loupe = self.handler.getActiveLoupe()
+        """Set atom size scale for the current Loupe."""
+        loupe = self.window
         if loupe and hasattr(loupe, 'settings'):
             loupe.settings.setParameter("atomSizeScale", scale, refresh=True)
 
     def showBondWidthDialog(self):
-        """Show custom bond width input dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show custom bond width input dialog (current loupe)."""
+        loupe = self.window
         if not loupe:
             return
 
@@ -390,8 +391,8 @@ class MenuHandler(EventClass):
             self.setBondWidth(value)
 
     def showAtomSizeDialog(self):
-        """Show custom atom size input dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show custom atom size input dialog. (current loupe)"""
+        loupe = self.window
         if not loupe:
             return
 
@@ -410,8 +411,8 @@ class MenuHandler(EventClass):
             self.setAtomSize(value)
 
     def showBondColorPicker(self):
-        """Show bond color picker dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show bond color picker dialog. (current loupe)"""
+        loupe = self.window
         if not loupe:
             return
 
@@ -433,8 +434,8 @@ class MenuHandler(EventClass):
             loupe.settings.setParameter("bondColor", hex_color, refresh=True)
 
     def showBackgroundColorPicker(self):
-        """Show background color picker dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show background color picker dialog. (current loupe)"""
+        loupe = self.window
         if not loupe:
             return
 

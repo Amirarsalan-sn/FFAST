@@ -17,7 +17,7 @@ class UIHandler(EventClass):
     uiFilesPath = os.path.join("UI", "uiFiles")
     env = None
     tabs = []
-    loupes = []
+    loupes = 0
     loupeModules = []
     activeLoupe = None  # Currently active Loupe for menu actions
     workdir = None  # Working directory for file dialogs
@@ -42,25 +42,25 @@ class UIHandler(EventClass):
         self.quitReady = True
 
     def nLoupes(self):
-        return len(self.loupes)
+        return self.loupes
 
-    def getActiveLoupe(self):
-        """Get the currently active Loupe instance, or the most recently created one."""
+    """def getActiveLoupe(self):
+        \"""Get the currently active Loupe instance, or the most recently created one.\"""
         if self.activeLoupe is not None:
             return self.activeLoupe
         elif len(self.loupes) > 0:
             return self.loupes[-1]
-        return None
+        return None"""
 
     def newLoupe(self):
-        loupe = Loupe(self, len(self.loupes))
+        loupe = Loupe(self, self.loupes)
 
         for func in self.loupeModules:
             func(self, loupe)
 
         loupe.forceUpdate()
-        self.loupes.append(loupe)
-        self.activeLoupe = loupe  # Set as active Loupe
+        self.loupes += 1
+
         loupe.show()
         loupe.setFocus()
 
