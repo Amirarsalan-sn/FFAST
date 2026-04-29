@@ -580,7 +580,7 @@ class Loupe(Widget, EventChildClass):
 
         #MENU BAR
         self.mBar = QtWidgets.QMenuBar(self)
-        self.menuHandler = MenuHandler(self)
+        self.menuHandler = MenuHandler(self, mode="loupe")
         self.layout.setMenuBar(self.mBar)
 
     # Adding menu bar getter for MenuHandler to be able to properly initialize the menu
