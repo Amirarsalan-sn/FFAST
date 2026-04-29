@@ -64,7 +64,7 @@ class MenuHandler(EventClass):
             # File.addAction("Exit", self.onExit)
 
         # LOUPE
-        Loupe = mb.addMenu("&Loupe")
+        Loupe = mb.addMenu("&3D &View")
         Loupe.addAction("New", self.newLoupe, "Ctrl+n")
         Loupe.addSeparator()
         if self.mode == "loupe":
