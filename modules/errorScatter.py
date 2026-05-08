@@ -1,4 +1,4 @@
-import numpy as np
+"""import numpy as np
 from config.userConfig import getConfig
 import logging
 
@@ -216,3 +216,4 @@ def loadUI(UIHandler, env):
     plt = ForcesScatterPlot(UIHandler, parent=ct)
     ct.addWidget(plt, 0, 1)
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
+"""
