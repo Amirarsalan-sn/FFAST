@@ -992,6 +992,7 @@ class Environment(EventClass):
             if ("cluster" in cacheKey) and hasattr(dataset, 'isVariable') and dataset.isVariable:
                 logger.info("The cluster errors feature is not supported for variable datasets")
                 queue.discard(cacheKey)
+                self.eventPush('CLUSTER_FOR_VARIABLE')
                 continue
 
             if self.hasCacheKey(cacheKey):
