@@ -1,63 +1,98 @@
+import os
+import sys
 from events import EventClass
 from PySide6.QtWidgets import QFileDialog
 from UI.Templates import customFileDialog, BigDatasetWarningDialog
-import os
+from collections.abc import Mapping, Container
+from client.dataType import AtomsList
+
+
+def deep_getsizeof(obj, seen=None):
+    """
+    Function to calculate the size of an object on memory in bites.
+    :param obj: Desired object
+    :param seen: Flag to avoid double counting of objects.
+    :return: Size of the object in bytes.
+    """
+    if seen is None:
+        seen = set()
+
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+
+    size = sys.getsizeof(obj)
+
+    if isinstance(obj, Mapping):
+        size += sum(deep_getsizeof(k, seen) + deep_getsizeof(v, seen) for k, v in obj.items())
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        size += sum(deep_getsizeof(i, seen) for i in obj)
+    elif hasattr(obj, "__dict__"):
+        size += deep_getsizeof(obj.__dict__, seen)
+    elif hasattr(obj, "__slots__"):
+        for slot in obj.__slots__:
+            if hasattr(obj, slot):
+                size += deep_getsizeof(getattr(obj, slot), seen)
+
+    return size
 
 
 class MenuHandler(EventClass):
-    def __init__(self, window):
+    def __init__(self, window, mode="main"):
         self.handler = window.handler
         self.window = window
+        self.mode = mode  # either "main" for the main window or "loupe" for loupes.
         self.connectActions()
 
     def connectActions(self):
         handler, window = (self.handler, self.window)
         mb = window.menuBar()
+        if self.mode == 'main':
+            # FILE
+            File = mb.addMenu("&File")
+            File.addAction("Save", self.onSave, "Ctrl+s")
+            File.addAction("Load", self.onLoad, "Ctrl+l")
 
-        # FILE
-        File = mb.addMenu("&File")
-        File.addAction("Save", self.onSave, "Ctrl+s")
-        File.addAction("Load", self.onLoad, "Ctrl+l")
+            File.addAction("Load Dataset", self.onDatasetLoad, "Ctrl+d")
+            File.addAction("Load Model", self.onModelLoad, "Ctrl+m")
 
-        File.addAction("Load Dataset", self.onDatasetLoad, "Ctrl+d")
-        File.addAction("Load Model", self.onModelLoad, "Ctrl+m")
+            File.addAction("Load Zero Model", self.onZeroModelLoad, "Ctrl+0")
+            File.addAction("Load Prediction", self.onPrepredictedModelLoad, "Ctrl+p")
 
-        File.addAction("Load Zero Model", self.onZeroModelLoad, "Ctrl+0")
-        File.addAction("Load Prediction", self.onPrepredictedModelLoad, "Ctrl+p")
-
-        # File.addAction("Preferences", self.onPreferences)
-        # File.addAction("Exit", self.onExit)
+            # File.addAction("Preferences", self.onPreferences)
+            # File.addAction("Exit", self.onExit)
 
         # LOUPE
-        Loupe = mb.addMenu("&Loupe")
+        Loupe = mb.addMenu("&3D &View")
         Loupe.addAction("New", self.newLoupe, "Ctrl+n")
         Loupe.addSeparator()
+        if self.mode == "loupe":
+            # Bond Width submenu
+            bondMenu = Loupe.addMenu("Bond Width")
+            bondMenu.addAction("Thin (10)", lambda: self.setBondWidth(10))
+            bondMenu.addAction("Normal (25)", lambda: self.setBondWidth(25))
+            bondMenu.addAction("Thick (50)", lambda: self.setBondWidth(50))
+            bondMenu.addAction("Extra Thick (100)", lambda: self.setBondWidth(100))
+            # TODO: add custom bond width dialog
+            # bondMenu.addSeparator()
+            # bondMenu.addAction("Custom...", self.showBondWidthDialog)
 
-        # Bond Width submenu
-        bondMenu = Loupe.addMenu("Bond Width")
-        bondMenu.addAction("Thin (10)", lambda: self.setBondWidth(10))
-        bondMenu.addAction("Normal (25)", lambda: self.setBondWidth(25))
-        bondMenu.addAction("Thick (50)", lambda: self.setBondWidth(50))
-        bondMenu.addAction("Extra Thick (100)", lambda: self.setBondWidth(100))
-        # TODO: add custom bond width dialog
-        # bondMenu.addSeparator()
-        # bondMenu.addAction("Custom...", self.showBondWidthDialog)
+            # Atom Size submenu
+            atomMenu = Loupe.addMenu("Atom Size")
+            atomMenu.addAction("50%", lambda: self.setAtomSize(0.5))
+            atomMenu.addAction("75%", lambda: self.setAtomSize(0.75))
+            atomMenu.addAction("100%", lambda: self.setAtomSize(1.0))
+            atomMenu.addAction("150%", lambda: self.setAtomSize(1.5))
+            atomMenu.addAction("200%", lambda: self.setAtomSize(2.0))
+            # TODO: add custom atom size dialog
+            # atomMenu.addSeparator()
+            # atomMenu.addAction("Custom...", self.showAtomSizeDialog)
 
-        # Atom Size submenu
-        atomMenu = Loupe.addMenu("Atom Size")
-        atomMenu.addAction("50%", lambda: self.setAtomSize(0.5))
-        atomMenu.addAction("75%", lambda: self.setAtomSize(0.75))
-        atomMenu.addAction("100%", lambda: self.setAtomSize(1.0))
-        atomMenu.addAction("150%", lambda: self.setAtomSize(1.5))
-        atomMenu.addAction("200%", lambda: self.setAtomSize(2.0))
-        # TODO: add custom atom size dialog
-        # atomMenu.addSeparator()
-        # atomMenu.addAction("Custom...", self.showAtomSizeDialog) 
-
-        # Colors submenu
-        colorMenu = Loupe.addMenu("Colors")
-        colorMenu.addAction("Bond Color...", self.showBondColorPicker)
-        colorMenu.addAction("Background Color...", self.showBackgroundColorPicker)
+            # Colors submenu
+            colorMenu = Loupe.addMenu("Colors")
+            colorMenu.addAction("Bond Color...", self.showBondColorPicker)
+            colorMenu.addAction("Background Color...", self.showBackgroundColorPicker)
 
     def onSave(self):
         workdir = self.handler.workdir
@@ -123,24 +158,35 @@ class MenuHandler(EventClass):
                 return
 
             selected_energy_key, selected_force_key, prediction_keys = result
-        file_size = os.path.getsize(path) // 1_000_000_000
-        slice_num = 0
-        if file_size >= 5:
-            slice_num = self.large_dataset_handle(file_size, logger)
+        file_size = os.path.getsize(path) / 1_000_000_000
+        slice_num = -1  # load entirely on RAM by default
+        if file_size >= 3:
+            slice_num = self.large_dataset_handle(path, logger)
 
-        if slice_num == -1:
+        if slice_num == -2:
             logger.info("load cancelled.")
             return
-        elif slice_num == 0:
-            env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key,
-                                selected_force_key=selected_force_key, prediction_keys=prediction_keys)
-        else:
+        if slice_num > 0:
             logger.info(f"loading dataset with slice: {slice_num}")
+        env.taskLoadDataset(path, typ, selected_energy_key=selected_energy_key, selected_force_key=selected_force_key,
+                            prediction_keys=prediction_keys, slice_num=slice_num)
 
-    def large_dataset_handle(self, file_size, logger):
+    def large_dataset_handle(self, path, logger):
         from PySide6.QtWidgets import QDialog
+        import ase.io
 
-        dialog = BigDatasetWarningDialog(file_size, self.handler.window)
+        logger.info("Large dataset detected, calculating the length.")
+        length = AtomsList.calc_dataset_length_static(path)
+        logger.info(f"Total dataset length: {length}")
+
+        logger.info("Total length calculated, approximating size of each atom in dataset.")
+        temp_dataset = ase.io.read(path, index=slice(0, 1000, None))
+        temp_size = deep_getsizeof(temp_dataset)  # the size of temp_dataset in bytes.
+        avg_per_atom_size = temp_size/1000
+        file_size = length*avg_per_atom_size
+        logger.info(f"Total size of the dataset on RAM would be approximately {file_size/1_000_000_000:.2f} GBs.")
+
+        dialog = BigDatasetWarningDialog(file_size, length, self.handler.window)
         result = dialog.exec()
         if result == QDialog.Accepted:
             slice_num = dialog.get_slice_number()
@@ -151,16 +197,19 @@ class MenuHandler(EventClass):
                         return slice_num
                     else:
                         logger.info("Invalid slice number entered, load abort.")
-                        return -1
+                        return -2
                 except (ValueError, TypeError):
                     logger.info("Invalid slice number entered, load abort.")
-                    return -1
+                    return -2
+            elif dialog.user_clicked_load_no_cache:
+                logger.info("User decided to load the whole dataset without caching.")
+                return -1
             else:
-                logger.info("User decided to load the whole dataset.")
+                logger.info("User decided to load the whole dataset with caching.")
                 return 0
         else:
             logger.info("User cancelled the load operation.")
-            return -1
+            return -2
 
 
 
@@ -309,21 +358,21 @@ class MenuHandler(EventClass):
         env.taskLoadZeroModel()
 
     def setBondWidth(self, width):
-        """Set bond width for the active Loupe."""
-        loupe = self.handler.getActiveLoupe()
+        """Set bond width for the current Loupe."""
+        loupe = self.window
         if not loupe:
             return
         loupe.settings.setParameter("bondWidth", width, refresh=True)
 
     def setAtomSize(self, scale):
-        """Set atom size scale for the active Loupe."""
-        loupe = self.handler.getActiveLoupe()
+        """Set atom size scale for the current Loupe."""
+        loupe = self.window
         if loupe and hasattr(loupe, 'settings'):
             loupe.settings.setParameter("atomSizeScale", scale, refresh=True)
 
     def showBondWidthDialog(self):
-        """Show custom bond width input dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show custom bond width input dialog (current loupe)."""
+        loupe = self.window
         if not loupe:
             return
 
@@ -342,8 +391,8 @@ class MenuHandler(EventClass):
             self.setBondWidth(value)
 
     def showAtomSizeDialog(self):
-        """Show custom atom size input dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show custom atom size input dialog. (current loupe)"""
+        loupe = self.window
         if not loupe:
             return
 
@@ -362,8 +411,8 @@ class MenuHandler(EventClass):
             self.setAtomSize(value)
 
     def showBondColorPicker(self):
-        """Show bond color picker dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show bond color picker dialog. (current loupe)"""
+        loupe = self.window
         if not loupe:
             return
 
@@ -385,8 +434,8 @@ class MenuHandler(EventClass):
             loupe.settings.setParameter("bondColor", hex_color, refresh=True)
 
     def showBackgroundColorPicker(self):
-        """Show background color picker dialog."""
-        loupe = self.handler.getActiveLoupe()
+        """Show background color picker dialog. (current loupe)"""
+        loupe = self.window
         if not loupe:
             return
 

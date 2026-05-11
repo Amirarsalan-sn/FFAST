@@ -544,7 +544,7 @@ class Loupe(Widget, EventChildClass):
         self.initialiseSettings()
 
         self.resize(1100, 800)
-        self.setWindowTitle(f"Loupe {N}")
+        self.setWindowTitle(f"3D View {N}")
 
         # SIDEBAR HERE
         self.sideBarContainer = Widget(layout="vertical", parent=self)
@@ -580,7 +580,7 @@ class Loupe(Widget, EventChildClass):
 
         #MENU BAR
         self.mBar = QtWidgets.QMenuBar(self)
-        self.menuHandler = MenuHandler(self)
+        self.menuHandler = MenuHandler(self, mode="loupe")
         self.layout.setMenuBar(self.mBar)
 
     # Adding menu bar getter for MenuHandler to be able to properly initialize the menu

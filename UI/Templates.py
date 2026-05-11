@@ -1776,9 +1776,11 @@ def customFileDialog(parent, fileTypes=None, extensions=None, save=False, direct
 
 
 class BigDatasetWarningDialog(QDialog):
-    def __init__(self, file_size_mb, parent=None):
+    def __init__(self, file_size_mb, dataset_length, parent=None):
         super().__init__(parent)
         self.user_clicked_pick_samples = False
+        self.user_clicked_load_no_cache = False
+        self.dataset_length = dataset_length
         self.setWindowTitle("Attention")
         self.resize(700, 250)
         self.setModal(True)
@@ -1792,12 +1794,15 @@ class BigDatasetWarningDialog(QDialog):
             "The dataset that you selected is very big. "
             "For efficient processing, you might want to select samples from the dataset "
             "(pick every 10 atomic structures or every 100, etc.). "
-            "If you are sure that your system can handle this dataset just press OK, "
+            "If you are sure that your system can handle this dataset just press 'Load as a whole (without caching)', "
             "otherwise write your desired slice number in the box below and select "
             "'Pick samples'. "
-            "If your system does not have enough resources, you still can press OK "
-            "but it will take a lot of time for the application to load and process "
-            "your dataset."
+            "If your system does not have enough resources, yet you still want to have all of the dataset you can click"
+            " on 'Load as a whole'. This way, your dataset will be stored partially on RAM and partially on hard "
+            "drive (like a caching mechanism), but it will greatly increase the computation time of the program."
+            "\n\nAlso, note that the RAM usage estimation shown below only specifies the required space to store the "
+            "dataset itself, the values used in plots are also stored in RAM to avoid recalculation. So, the "
+            "approximation suggests a minimum on the demanded volume."
         )
 
         label = QLabel(msg)
@@ -1811,13 +1816,16 @@ class BigDatasetWarningDialog(QDialog):
         layout.addWidget(self.slice_input)
 
         # RAM‑usage feedback label
-        self.ram_hint = QLabel("RAM usage estimate will appear here.")
+        self.ram_hint = QLabel(f"You require approximately {2*self.file_size_mb/1_000_000_000:.2f} GB of RAM "
+                               f"(dataset itself+ its prediction dataset in future)!\nDataset length: "
+                               f"{self.dataset_length} atoms.")
         self.ram_hint.setStyleSheet("color: #666; font-size: 10pt;")
         layout.addWidget(self.ram_hint)
 
         # Buttons
         button_box = QDialogButtonBox()
-        button_box.addButton("OK", QDialogButtonBox.AcceptRole)
+        button_box.addButton("Load as a whole", QDialogButtonBox.AcceptRole)
+        load_no_cache = button_box.addButton("Load as a whole (without caching)", QDialogButtonBox.AcceptRole)
         pick_btn = button_box.addButton("Pick samples", QDialogButtonBox.ActionRole)
 
         layout.addWidget(button_box)
@@ -1829,10 +1837,13 @@ class BigDatasetWarningDialog(QDialog):
         button_box.rejected.connect(self.reject)
         button_box.clicked.connect(self.on_button_clicked)
         pick_btn.clicked.connect(self.accept)
+        load_no_cache.clicked.connect(self.accept)
 
     def on_button_clicked(self, button):
         if button.text() == "Pick samples":
             self.user_clicked_pick_samples = True
+        elif button.text() == "Load as a whole (without caching)":
+            self.user_clicked_load_no_cache = True
 
     def update_ram_hint(self):
         text = self.slice_input.text().strip()
@@ -1842,15 +1853,16 @@ class BigDatasetWarningDialog(QDialog):
                 if slice_num <= 0:
                     hint = "Slice number must be a positive integer."
                 else:
-                    effective_size = self.file_size_mb / slice_num
+                    effective_size = (self.file_size_mb / slice_num)/1_000_000_000
                     hint = (
                         f"For this slice factor, you require approximately "
-                        f"{2*effective_size:.2f} GB of RAM (dataset itself+ its prediction dataset in future)."
+                        f"{2*effective_size:.2f} GB of RAM (dataset itself+ its prediction dataset in future)!"
+                        f"\nDataset length: {self.dataset_length//slice_num} atoms."
                     )
             except ValueError:
                 hint = "Please enter a valid integer slice number."
         else:
-            hint = "RAM usage estimate will appear here."
+            hint = f"RAM usage estimate will appear here.\nDataset length: {self.dataset_length} atoms."
 
         self.ram_hint.setText(hint)
 

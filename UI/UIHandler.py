@@ -3,6 +3,7 @@ import os
 import pyqtgraph
 from PySide6 import QtWidgets
 from PySide6.QtCore import QDir
+from PySide6.QtWidgets import QMessageBox
 
 from events import EventClass
 from UI.Loupe import Loupe
@@ -17,7 +18,7 @@ class UIHandler(EventClass):
     uiFilesPath = os.path.join("UI", "uiFiles")
     env = None
     tabs = []
-    loupes = []
+    loupes = 0
     loupeModules = []
     activeLoupe = None  # Currently active Loupe for menu actions
     workdir = None  # Working directory for file dialogs
@@ -27,6 +28,7 @@ class UIHandler(EventClass):
         super().__init__(*args, **kwargs)
         self.workdir = workdir if workdir else os.getcwd()
         self.eventSubscribe("QUIT_READY", self.setQuitReady)
+        self.eventSubscribe('CLUSTER_FOR_VARIABLE', self.showCLusterVariable)
 
     def quitEvent(self):
         self.eventPush("QUIT_EVENT")
@@ -41,26 +43,35 @@ class UIHandler(EventClass):
     def setQuitReady(self):
         self.quitReady = True
 
-    def nLoupes(self):
-        return len(self.loupes)
+    def showCLusterVariable(self):
+        msg = QMessageBox(self.window)
+        msg.setWindowTitle("Notification")
+        msg.setText("The cluster errors feature is not supported for variable datasets.")
+        msg.setIcon(QMessageBox.Information)
+        msg.setStandardButtons(QMessageBox.Ok)
 
-    def getActiveLoupe(self):
-        """Get the currently active Loupe instance, or the most recently created one."""
+        result = msg.exec()
+
+    def nLoupes(self):
+        return self.loupes
+
+    """def getActiveLoupe(self):
+        \"""Get the currently active Loupe instance, or the most recently created one.\"""
         if self.activeLoupe is not None:
             return self.activeLoupe
         elif len(self.loupes) > 0:
             return self.loupes[-1]
-        return None
+        return None"""
 
     def newLoupe(self):
-        loupe = Loupe(self, len(self.loupes))
+        loupe = Loupe(self, self.loupes)
 
         for func in self.loupeModules:
             func(self, loupe)
 
         loupe.forceUpdate()
-        self.loupes.append(loupe)
-        self.activeLoupe = loupe  # Set as active Loupe
+        self.loupes += 1
+
         loupe.show()
         loupe.setFocus()
 

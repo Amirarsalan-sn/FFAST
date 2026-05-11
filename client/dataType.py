@@ -328,7 +328,7 @@ class AtomsList(UserList):
         path (str): the path to the designated dataset.
         atoms_chunk (int): cache size (in terms of number of atoms).
     """
-    def __init__(self, path, atoms_chunk=100_000):
+    def __init__(self, path, atoms_chunk=300_000):
         super().__init__()
         self.offset = atoms_chunk
         self.start_index = 0
@@ -383,6 +383,41 @@ class AtomsList(UserList):
         del atoms, remaining_atoms
         return dataset_size
 
+    @staticmethod
+    def calc_dataset_length_static(path):
+        """
+        This method gets the path to a dataset and returns its length without reading the entire dataset.
+        For detailed explanation see the documentation for AtomsList.calc_dataset_length(self, path)...
+        :param path: Path to the dataset.
+        :return: length of the dataset.
+        """
+        size_gb = os.path.getsize(path) // 1_000_000_000
+        slice_size = 0
+        if size_gb < 1:
+            logger.info(f'Small dataset identified, no need for caching mechanism.')
+            slice_size = 5  # debug purposes
+        if 1 <= size_gb <= 5:  # change it so that the users choose the slice num
+            slice_size = 10  # read and then skip 10 atoms.
+            logger.info(f"Moderate size file (1 to 5 GB), setting the slice size to {slice_size}")
+        elif 5 < size_gb <= 10:
+            slice_size = 100  # skip 100
+            logger.info(f"Big file (5 to 10 GB), setting the slice size to {slice_size}")
+        elif size_gb > 10:
+            slice_size = 1000
+            logger.info(f"Gigantic file (10 to inf GB), setting the slice size to {slice_size}")
+
+        atoms = ase.io.read(path, index=slice(0, None, slice_size))
+        number_of_slice_chunks = len(atoms)
+
+        if number_of_slice_chunks == 0:
+            logger.error(f"Dataset ({path}) has no entries!!!")
+            return 0
+
+        remaining_atoms = ase.io.read(path, index=slice(slice_size * (number_of_slice_chunks - 1), None))
+        dataset_size = slice_size * (number_of_slice_chunks - 1) + len(remaining_atoms)
+        del atoms, remaining_atoms
+        return dataset_size
+
     def load_new_chunk(self, start):
         """
         Loads a new chunk from source dataset.
@@ -429,8 +464,11 @@ class AtomsList(UserList):
                 start += new_offset
             return result
         else:
-            if item >= self.N:
+            item = item if item >= 0 else item + self.N
+
+            if item >= self.N or item < 0:
                 raise IndexError(f"Index {item} out of range {self.N}")
+
             if not (self.start_index <= item < self.start_index + self.offset):
                 self.load_new_chunk(item)
 
