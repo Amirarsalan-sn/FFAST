@@ -44,8 +44,8 @@ def loadData(env):
 
             ePred = env.getData("energy", model=model, dataset=dataset)
             eData = dataset.getEnergies()
-            print ("eData:", eData)
-            print ("ePred:", ePred.get("energy"))
+            print("eData:", eData)
+            print("ePred:", ePred.get("energy"))
 
             diff = ePred.get("energy") - eData
             shift = np.mean(diff)
@@ -166,15 +166,19 @@ def loadData(env):
                 # Variable dataset: diff is list of arrays
                 # Flatten each molecule's diff and compute MAE per molecule
                 mae_list = []
+                rmse_list = []
                 for diff_mol in diff:
                     diff_flat = np.abs(diff_mol).reshape(-1)
                     mae_list.append(np.mean(diff_flat))
+                    rmse_list.append(np.mean(np.array(diff_flat) ** 2))
                 mae = np.array(mae_list)
+                rmse = np.sqrt(rmse_list)
             else:
                 # Uniform dataset: diff is (N, M, 3) array
                 diff = np.abs(diff)
                 diff = diff.reshape(diff.shape[0], -1)
                 mae = np.mean(diff, axis=1)
+                rmse = np.sqrt(np.mean(diff ** 2, axis=1))
 
             # Mirror for symmetric distribution
             mae = np.concatenate([-np.abs(mae), np.abs(mae)])
@@ -203,8 +207,34 @@ def loadData(env):
                 )
                 distY = kde(distX)
 
-            de = self.newDataEntity(distY=distY, distX=distX)
+            rmse = np.concatenate([-rmse, rmse])
+
+            if np.std(rmse) < 1e-10:
+                # Zero or near-zero variance: create simple distribution
+                distXrmse = np.linspace(
+                    0,
+                    max(np.max(rmse), 1e-10),
+                    getConfig("plotDistNum"),
+                )
+                # Delta function approximation at mean value
+                distYrmse = np.zeros_like(distXrmse)
+                closest_idx = np.argmin(np.abs(distXrmse - np.mean(rmse)))
+                distYrmse[closest_idx] = 1.0
+            else:
+                # Normal KDE calculation
+                kde = gaussian_kde(rmse)
+                delta = np.max(rmse) - 0
+
+                distXrmse = np.linspace(
+                    0,
+                    np.max(rmse) + delta * 0.05,
+                    getConfig("plotDistNum"),
+                )
+                distYrmse = kde(distXrmse)
+
+            de = self.newDataEntity(distY=distY, distX=distX, distYrmse=distYrmse, distXrmse=distXrmse)
             env.setData(de, self.key, model=model, dataset=dataset)
+
             return True
 
     class EnergyErrorMetrics(DataType):
@@ -291,6 +321,107 @@ def loadData(env):
     env.registerDataType(ForcesErrorDist)
     env.registerDataType(EnergyErrorMetrics)
     env.registerDataType(ForcesErrorMetrics)
+
+
+def loadUIRMSE(UIHandler, ct, culIdx):
+    from UI.Plots import BasicPlotWidget
+    from UI.Templates import Slider
+    class ForcesErrorRMSEDistPlot(BasicPlotWidget):
+        def __init__(self, handler, **kwargs):
+            super().__init__(
+                handler,
+                title="Forces RMSE distribution",
+                isSubbable=False,
+                name="Force Error RMSE Distribution",
+                **kwargs,
+            )
+            self.setDataDependencies("forcesErrorDist")
+            self.setXLabel("Forces RMSE", getConfig("forceUnit"))
+            self.setYLabel("Density")
+
+        def addPlots(self):
+            for data in self.getWatchedData():
+                de = data["dataEntry"]
+                x, y = de.get("distXrmse"), de.get("distYrmse")
+                self.plot(x, y, autoColor=data, autoLabel=data)
+
+        def getDatasetSubIndices(self, dataset, model):
+            raise NotImplementedError
+
+    class ForcesErrorRMSETimelinePlot(BasicPlotWidget):
+        smoothing = 1
+
+        def __init__(self, handler, **kwargs):
+            super().__init__(
+                handler,
+                title="Forces RMSE timeline",
+                name="Force Error Timeline",
+                **kwargs,
+            )
+            self.setDataDependencies("forcesError")
+            self.setXLabel("Configuration index")
+            self.setYLabel("Forces RMSE", getConfig("forceUnit"))
+
+            self.slider = Slider(
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
+            )
+            self.addOption(self.slider)
+            self.slider.setCallbackFunc(self.updateSmoothing)
+
+        def updateSmoothing(self, value):
+            self.smoothing = value
+            self.visualRefresh(force=True, noAutoRange=True)
+
+        def addPlots(self):
+            self.slider.setMinMax(1, self.env.getMaxSize() // 2 + 1)
+            # requires more thinking (what happens to current smoothings when deleting datasets)
+            # also what happens if the smoothing value is larger than the new added dataset's size
+            smoothing = self.smoothing
+            for data in self.getWatchedData():
+                err = data["dataEntry"].get("diff")
+
+                # Handle variable vs uniform datasets
+                if isinstance(err, list):
+                    # Variable dataset: err is list of arrays
+                    rmse = np.array([np.mean(np.array(e) ** 2) for e in err])
+                else:
+                    # Uniform dataset: err is (N, M, 3) array
+                    rmse = err.reshape(err.shape[0], -1)
+                    rmse = np.mean(rmse ** 2, axis=1)
+
+                rmse = np.sqrt(rmse)
+
+                # Apply smoothing
+                rmse = np.convolve(
+                    rmse, np.ones(smoothing) / smoothing, mode="valid"
+                )
+                self.plot(
+                    np.arange(rmse.shape[0]),
+                    rmse,
+                    autoColor=data,
+                    autoLabel=data,
+                )
+
+        def getDatasetSubIndices(self, dataset, model):
+            (xRange, yRange) = self.getRanges()
+            N = dataset.getN()
+            x0, x1 = xRange
+            return np.arange(
+                max(0, int(x0 + self.smoothing)),
+                min(N, int(x1 + self.smoothing)),
+            )
+
+    plt = ForcesErrorRMSEDistPlot(UIHandler, parent=ct)
+    ct.addWidget(plt, culIdx, 0)
+    ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
+
+    plt = ForcesErrorRMSETimelinePlot(UIHandler, parent=ct)
+    ct.addWidget(plt, culIdx, 1)
+    ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
 
 
 def loadUI(UIHandler, env):
@@ -575,6 +706,8 @@ def loadUI(UIHandler, env):
     ct.addWidget(plt, 1, 1)
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
 
+    loadUIRMSE(UIHandler, ct, 2)
+
     # TABLES
     scrollContainer = HorizontalContainerScrollArea(parent=ct)
     scrollContainer.content.layout.setSpacing(32)
@@ -708,7 +841,7 @@ def loadUI(UIHandler, env):
     scrollContainer.addStretch()
 
     # argument are (row, col, rowSpan, colSpan)
-    ct.addWidget(scrollContainer, 2, 0, 1, 2)
+    ct.addWidget(scrollContainer, 3, 0, 1, 2)
 
     # Moving scatter errors to basic Errors
 
@@ -800,7 +933,7 @@ def loadUI(UIHandler, env):
                 return idxs[args]
 
     plt = EnergyScatterPlot(UIHandler, parent=ct)
-    ct.addWidget(plt, 3, 0)
+    ct.addWidget(plt, 4, 0)
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
 
     class ForcesScatterPlot(BasicPlotWidget):
@@ -913,5 +1046,5 @@ def loadUI(UIHandler, env):
             return idxs
 
     plt = ForcesScatterPlot(UIHandler, parent=ct)
-    ct.addWidget(plt, 3, 1)
+    ct.addWidget(plt, 4, 1)
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
