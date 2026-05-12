@@ -36,6 +36,7 @@ config = {
         "pause": "pause.png",
         "save": "save.png",
         "freeze": "freeze.png",
+        "info": "info.png"
     },
 }
 
