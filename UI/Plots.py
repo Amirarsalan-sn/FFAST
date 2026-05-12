@@ -1,4 +1,4 @@
-from UI.Templates import Widget, ToolCheckButton, PushButton, TableView
+from UI.Templates import Widget, ToolButton, ToolCheckButton, PushButton, TableView
 from PySide6 import QtCore, QtGui, QtWidgets
 from config.uiConfig import config, configStyleSheet
 from PySide6.QtCore import QEvent, Qt
@@ -187,6 +187,10 @@ class BasicPlotWidget(Widget, EventChildClass, DataDependentObject):
         layout.addWidget(self.titleLabel)
 
         layout.addStretch()
+
+        self.infoButton = ToolButton(lambda x: None, icon="info")
+        layout.addWidget(self.infoButton)
+        self.infoButton.setToolTip("information")
 
         if self.hasLegend:
             self.legendCheckBox = ToolCheckButton(
