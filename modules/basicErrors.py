@@ -338,6 +338,16 @@ def loadUIRMSE(UIHandler, ct, culIdx):
             self.setDataDependencies("forcesErrorDist")
             self.setXLabel("Forces RMSE", getConfig("forceUnit"))
             self.setYLabel("Density")
+            self.infoButton.setToolTip("""
+Distribution of predicted force errors:
+Each error value is obtained by calculating the RMSE of forces in each atomic structure.
+Meaning, in each atomic structure, for each atom, the difference between predicted forces and 
+real forces is calculated (in x, y and z dimension), then these values all of these values are
+used to calculate the forces RMSE on the whole atomic structure:
+RMSE(F_xi, F_yi, F_zi) for i in atoms inside the structure.
+On x axis you see the MAE errors (between prediction and ground truth) as a random variable.
+On y axis you see the probability mass function of errors PDF(x).
+""")
 
         def addPlots(self):
             for data in self.getWatchedData():
@@ -371,6 +381,13 @@ def loadUIRMSE(UIHandler, ct, culIdx):
             )
             self.addOption(self.slider)
             self.slider.setCallbackFunc(self.updateSmoothing)
+
+            self.infoButton.setToolTip("""
+Predicted forces errors across the dataset:
+On x axis you see the RMSE error (between prediction and ground truth) of each dataset sample.
+- Calculation of MAE is as same as "Forces RMSE Distribution" -
+On y axis you see the calculated MAE for that sample.
+""")
 
         def updateSmoothing(self, value):
             self.smoothing = value
@@ -463,6 +480,11 @@ def loadUI(UIHandler, env):
             self.eventSubscribe(
                 "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
             )
+            self.infoButton.setToolTip("""
+Distribution of predicted energy errors:
+On x axis you see the MAE errors (between prediction and ground truth) as a random variable.
+On y axis you see the probability mass function of errors PDF(x).
+""")
 
         def onEnergyShiftChanged(self):
             shifted = self.handler.energyShiftEnabled
@@ -522,6 +544,16 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("forcesErrorDist")
             self.setXLabel("Forces MAE", getConfig("forceUnit"))
             self.setYLabel("Density")
+            self.infoButton.setToolTip("""
+Distribution of predicted force errors:
+Each error value is obtained by calculating the MAE of forces in each atomic structure.
+Meaning, in each atomic structure, for each atom, the difference between predicted forces and 
+real forces is calculated (in x, y and z dimension), then these values all of these values are
+used to calculate the forces MAE on the whole atomic structure:
+MAE(F_xi, F_yi, F_zi) for i in atoms inside the structure.
+On x axis you see the MAE errors (between prediction and ground truth) as a random variable.
+On y axis you see the probability mass function of errors PDF(x).
+""")
 
         def addPlots(self):
             for data in self.getWatchedData():
@@ -582,6 +614,11 @@ def loadUI(UIHandler, env):
             self.eventSubscribe(
                 "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
             )
+            self.infoButton.setToolTip("""
+Predicted energy errors across the dataset:
+On x axis you see the MAE error (between prediction and ground truth) of each dataset sample.
+On y axis you see the calculated MAE for that sample.
+""")
 
         def onEnergyShiftChanged(self):
             shifted = self.handler.energyShiftEnabled
@@ -649,6 +686,12 @@ def loadUI(UIHandler, env):
             )
             self.addOption(self.slider)
             self.slider.setCallbackFunc(self.updateSmoothing)
+            self.infoButton.setToolTip("""
+Predicted forces errors across the dataset:
+On x axis you see the MAE error (between prediction and ground truth) of each dataset sample.
+- Calculation of MAE is as same as "Forces MAE Distribution" -
+On y axis you see the calculated MAE for that sample.
+""")
 
         def updateSmoothing(self, value):
             self.smoothing = value
@@ -864,6 +907,9 @@ def loadUI(UIHandler, env):
             self.eventSubscribe(
                 "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
             )
+            self.infoButton.setToolTip("""
+This plot shows how Energies are scattered across the dataset and how well the model has predicted it.
+""")
 
         def onEnergyShiftChanged(self):
             shifted = self.handler.energyShiftEnabled
@@ -947,6 +993,9 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("forces")
             self.setXLabel("True Forces", getConfig("forcesUnit"))
             self.setYLabel("Predicted Forces", getConfig("forcesUnit"))
+            self.infoButton.setToolTip("""
+This plot shows how Forces are scattered across the dataset and how well the model has predicted it.
+""")
 
             self.indices = {}
 
