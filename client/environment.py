@@ -1,4 +1,5 @@
 import ase.io.formats
+from ase.calculators.calculator import PropertyNotImplementedError
 from ase.io.trajectory import Trajectory
 from events import EventClass
 from datasetLoaders.loader import (
@@ -268,35 +269,58 @@ class Environment(EventClass):
                     selected_force_key=selected_force_key
                 )
 
-            E = aseObject.getEnergies()
-            F = aseObject.getForces()
+            try:
+                E = aseObject.getEnergies()
+            except PropertyNotImplementedError:
+                logger.warning(
+                    "Energy not available in prediction file. "
+                    "Loading forces only."
+                )
+                E = None
+            try:
+                F = aseObject.getForces()
+            except PropertyNotImplementedError:
+                logger.warning(
+                    "Forces not available in prediction file. "
+                    "Loading energies only."
+                )
+                F = None
 
         dataset = self.getDataset(datasetKey)
-        eDataset = dataset.getEnergies()
-        if E.shape != eDataset.shape:
-            logger.error(
-                f"Shape mismatch when loading prepredicted model. Model energy shape: {E.shape}, dataset energy shape: {eDataset.shape}"
-            )
-            logger.error(
-                "Prediction load failed, you have probably selected the wrong prediction for the designated dataset. "
-                "Please try again and choose the correct prediction file according to the dataset selected "
-                "in the file filter dropdown."
-            )
-            return
 
-        modelKey = md5FromArraysAndStrings(E, F)
+        if E is not None:
+            eDataset = dataset.getEnergies()
+            if E.shape != eDataset.shape:
+                logger.error(
+                    f"Shape mismatch when loading prepredicted model. Model energy shape: {E.shape}, dataset energy shape: {eDataset.shape}"
+                )
+                logger.error(
+                    "Prediction load failed, you have probably selected the wrong prediction for the designated dataset. "
+                    "Please try again and choose the correct prediction file according to the dataset selected "
+                    "in the file filter dropdown."
+                )
+                return
 
-        energyDataType = self.getDataType("energy")
-        energyDataEntity = energyDataType.newDataEntity(energy=E.flatten())
-        self.setData(
-            energyDataEntity, "energy", model=modelKey, dataset=dataset
+        available = [x for x in (E, F) if x is not None]
+        modelKey = (
+            md5FromArraysAndStrings(*available)
+            if available
+            else md5FromArraysAndStrings(path)
         )
 
-        forcesDataType = self.getDataType("forces")
-        forcesDataEntity = forcesDataType.newDataEntity(forces=F)
-        self.setData(
-            forcesDataEntity, "forces", model=modelKey, dataset=dataset
-        )
+        if E is not None:
+            energyDataType = self.getDataType("energy")
+            energyDataEntity = energyDataType.newDataEntity(energy=E.flatten())
+            self.setData(
+                energyDataEntity, "energy", model=modelKey, dataset=dataset
+            )
+
+        if F is not None:
+            forcesDataType = self.getDataType("forces")
+            forcesDataEntity = forcesDataType.newDataEntity(forces=F)
+            self.setData(
+                forcesDataEntity, "forces", model=modelKey, dataset=dataset
+            )
 
         # update info with the path etc
         self.info.update(
