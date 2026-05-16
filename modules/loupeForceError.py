@@ -62,6 +62,22 @@ class ColorBarVisual(VisualElement):
                 clim=(prop.get("normMin"), prop.get("normMax")),
                 label=label,
             )
+        elif hasData and (setting == "Mean Acceleration Norm Error"):
+            label = "Mean accel norm" if zeroModel else "Acceleration Norm MAE"
+            self.setParameters(
+                visible=True,
+                cmap=prop.colorMap,
+                clim=(prop.get("accelNormMeanMin"), prop.get("accelNormMeanMax")),
+                label=label,
+            )
+        elif hasData and (setting == "Acceleration Norm Error"):
+            label = "Accel norm" if zeroModel else "Acceleration Norm Error"
+            self.setParameters(
+                visible=True,
+                cmap=prop.colorMap,
+                clim=(prop.get("accelNormMin"), prop.get("accelNormMax")),
+                label=label,
+            )
         else:
             self.setParameters(visible=False)
 
@@ -152,6 +168,7 @@ class ForceErrorColorProperty(CanvasProperty):
         if len(data) < 1:
             return
         dataset = data[0]["dataset"]
+        model = data[0]["model"]
         de = data[0][
             "dataEntry"
         ]  # just one dataset-model combination is watched
@@ -159,6 +176,25 @@ class ForceErrorColorProperty(CanvasProperty):
         if atomicMAE is None:
             return
         atomicErrorNorm = de.get("atomicErrorNorm")  # None for old cached data
+
+        # Get forcesError data for acceleration computation
+        import logging
+        logger = logging.getLogger("FFAST")
+        env = self.canvas.loupe.env
+        forcesErrorDE = env.getData("forcesError", model=model, dataset=dataset)
+        forcesErrorDiff = forcesErrorDE.get("diff") if forcesErrorDE else None
+
+        # Try to get masses for acceleration computation
+        atomicAccelErrorNorm = None
+        try:
+            # Get masses from first geometry
+            if hasattr(dataset, 'atomsList'):
+                masses = dataset.atomsList[0].get_masses()
+            else:
+                masses = None
+        except Exception as e:
+            logger.debug(f"Could not load atomic masses for acceleration computation: {e}")
+            masses = None
 
         # Handle variable vs uniform datasets
         if isinstance(atomicMAE, list):
@@ -223,6 +259,71 @@ class ForceErrorColorProperty(CanvasProperty):
             else:
                 meanAtomicErrorNorm = None
                 normMeanMin = normMeanMax = normMax = 0
+
+            # Compute acceleration error norms if masses available
+            if hasattr(dataset, 'atomsList'):
+                # Get force differences for acceleration computation
+                forcesError = forcesErrorDiff  # Should be same structure as atomicErrorNorm
+                if forcesError is not None:
+                    accelErrorNorms = []
+                    for i, force_diff_i in enumerate(forcesError):
+                        # force_diff_i shape: (n_atoms_i, 3)
+                        try:
+                            m_i = dataset.atomsList[i].get_masses()
+                            # accel_error = force_diff / mass
+                            accel_diff = force_diff_i / m_i[:, np.newaxis]
+                            # norm of acceleration error per atom
+                            accel_norm_i = np.linalg.norm(accel_diff, axis=1)
+                            accelErrorNorms.append(accel_norm_i)
+                        except:
+                            # Skip if masses unavailable for this molecule
+                            pass
+
+                    if len(accelErrorNorms) > 0:
+                        atomicAccelErrorNorm = accelErrorNorms
+
+                        # Compute statistics for accel norms
+                        accel_sp_sum, accel_sp_cnt = {}, {}
+                        accel_flat = []
+                        for i, accel_i in enumerate(accelErrorNorms):
+                            z_i = dataset.getElements(i)
+                            for z, a in zip(z_i, accel_i):
+                                accel_sp_sum[z] = accel_sp_sum.get(z, 0.0) + float(a)
+                                accel_sp_cnt[z] = accel_sp_cnt.get(z, 0) + 1
+                            accel_flat.extend(accel_i)
+
+                        accel_sp_mean = {
+                            z: accel_sp_sum[z] / accel_sp_cnt[z]
+                            for z in accel_sp_sum if accel_sp_cnt[z] > 0
+                        }
+                        meanAtomicAccelErrorNorm = [
+                            np.array(
+                                [accel_sp_mean.get(z, 0.0) for z in dataset.getElements(i)],
+                                dtype=float,
+                            )
+                            for i in range(len(accelErrorNorms))
+                        ]
+                        if len(accel_sp_mean) > 0:
+                            accel_sp_values = np.array(list(accel_sp_mean.values()), dtype=float)
+                            accelMeanMin = float(np.min(accel_sp_values))
+                            accelMeanMax = float(np.max(accel_sp_values))
+                        else:
+                            accelMeanMin = accelMeanMax = 0.0
+
+                        if len(accel_flat) > 0:
+                            accelMax = np.percentile(np.array(accel_flat), perc)
+                        else:
+                            accelMax = 0.0
+                    else:
+                        atomicAccelErrorNorm = None
+                        meanAtomicAccelErrorNorm = None
+                        accelMeanMin = accelMeanMax = accelMax = 0.0
+                else:
+                    meanAtomicAccelErrorNorm = None
+                    accelMeanMin = accelMeanMax = accelMax = 0.0
+            else:
+                meanAtomicAccelErrorNorm = None
+                accelMeanMin = accelMeanMax = accelMax = 0.0
         else:
             # Uniform dataset: original behavior
             meanAtomicMAE = np.mean(atomicMAE, axis=0)
@@ -240,6 +341,28 @@ class ForceErrorColorProperty(CanvasProperty):
                 meanAtomicErrorNorm = None
                 normMeanMin = normMeanMax = normMax = 0
 
+            # Compute acceleration error norms if masses available
+            if masses is not None:
+                forcesError = forcesErrorDiff
+                logger.info(f"forcesError shape: {forcesError.shape if forcesError is not None else 'None'}")
+                if forcesError is not None:
+                    # forcesError shape: (N, M, 3) for uniform dataset
+                    # masses shape: (M,)
+                    accel_diff = forcesError / masses[np.newaxis, :, np.newaxis]
+                    atomicAccelErrorNorm = np.linalg.norm(accel_diff, axis=2)
+
+                    meanAtomicAccelErrorNorm = np.mean(atomicAccelErrorNorm, axis=0)
+                    accelMax = np.percentile(atomicAccelErrorNorm, perc)
+                    accelMeanMin = float(np.min(meanAtomicAccelErrorNorm))
+                    accelMeanMax = float(np.max(meanAtomicAccelErrorNorm))
+                    logger.info(f"atomicAccelErrorNorm computed: True, accelNormMax: {accelMax}, accelNormMeanMax: {accelMeanMax}")
+                else:
+                    meanAtomicAccelErrorNorm = None
+                    accelMeanMin = accelMeanMax = accelMax = 0.0
+            else:
+                meanAtomicAccelErrorNorm = None
+                accelMeanMin = accelMeanMax = accelMax = 0.0
+
         self.set(
             atomicMAE=atomicMAE,
             meanAtomicMAE=meanAtomicMAE,
@@ -253,6 +376,12 @@ class ForceErrorColorProperty(CanvasProperty):
             normMax=normMax,
             normMeanMin=normMeanMin,
             normMeanMax=normMeanMax,
+            atomicAccelErrorNorm=atomicAccelErrorNorm,
+            meanAtomicAccelErrorNorm=meanAtomicAccelErrorNorm,
+            accelNormMin=0,
+            accelNormMax=accelMax,
+            accelNormMeanMin=accelMeanMin,
+            accelNormMeanMax=accelMeanMax,
             isZeroModel=data[0]["model"].fingerprint == "zeroModel",
         )
 
@@ -264,6 +393,8 @@ class ForceErrorColorProperty(CanvasProperty):
         self.canvas.props["forceError"].clear()
         self.canvas.props["meanForceNormError"].clear()
         self.canvas.props["forceNormError"].clear()
+        self.canvas.props["meanAccelerationNormError"].clear()
+        self.canvas.props["accelerationNormError"].clear()
 
         if "ColorBarVisual" in self.canvas.elements:
             self.canvas.elements["ColorBarVisual"].update()
@@ -282,14 +413,20 @@ class ForceErrorColorProperty(CanvasProperty):
             atomsElement.colorProperty = self.canvas.props["meanForceNormError"]
         elif hasData and (setting == "Force Norm Error"):
             atomsElement.colorProperty = self.canvas.props["forceNormError"]
+        elif hasData and (setting == "Mean Acceleration Norm Error"):
+            atomsElement.colorProperty = self.canvas.props["meanAccelerationNormError"]
+        elif hasData and (setting == "Acceleration Norm Error"):
+            atomsElement.colorProperty = self.canvas.props["accelerationNormError"]
         else:
             cp = atomsElement.colorProperty
-            # remove cp if it's one of the force ones
+            # remove cp if it's one of the force/accel ones
             if (
                 cp is self.canvas.props["meanForceError"]
                 or cp is self.canvas.props["forceError"]
                 or cp is self.canvas.props["meanForceNormError"]
                 or cp is self.canvas.props["forceNormError"]
+                or cp is self.canvas.props["meanAccelerationNormError"]
+                or cp is self.canvas.props["accelerationNormError"]
             ):
                 atomsElement.colorProperty = None
 
@@ -420,6 +557,68 @@ class ForceNormErrorProperty(CanvasProperty):
         self.clear()
 
 
+class MeanAccelerationNormErrorProperty(CanvasProperty):
+
+    key = "meanAccelerationNormError"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def onDatasetInit(self):
+        self.clear()
+
+    def generate(self):
+        prop = self.canvas.props["forceErrorColor"]
+        meanAtomicAccelErrorNorm = prop.get("meanAtomicAccelErrorNorm")
+        if prop.cleared or meanAtomicAccelErrorNorm is None:
+            return
+        if isinstance(meanAtomicAccelErrorNorm, list):
+            meanAtomicAccelErrorNorm = meanAtomicAccelErrorNorm[self.canvas.index]
+        accelMeanMin = prop.get("accelNormMeanMin")
+        accelMeanMax = prop.get("accelNormMeanMax")
+        fork = accelMeanMax - accelMeanMin
+        if fork <= 0:
+            rel = np.zeros_like(meanAtomicAccelErrorNorm, dtype=float)
+        else:
+            rel = (meanAtomicAccelErrorNorm - accelMeanMin) / fork
+        colors = prop.getColors(rel)
+        self.set(colors=colors)
+
+    def onNewGeometry(self):
+        if getattr(self.canvas.dataset, "isVariable", False):
+            self.clear()
+
+
+class AccelerationNormErrorProperty(CanvasProperty):
+
+    key = "accelerationNormError"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def onDatasetInit(self):
+        self.clear()
+
+    def generate(self):
+        prop = self.canvas.props["forceErrorColor"]
+        atomicAccelErrorNorm = prop.get("atomicAccelErrorNorm")
+        if prop.cleared or atomicAccelErrorNorm is None:
+            return
+        atomicAccelErrorNorm = atomicAccelErrorNorm[self.canvas.index]
+        accelMin = prop.get("accelNormMin")
+        accelMax = prop.get("accelNormMax")
+        fork = accelMax - accelMin
+        if fork <= 0:
+            rel = np.zeros_like(atomicAccelErrorNorm, dtype=float)
+        else:
+            rel = (atomicAccelErrorNorm - accelMin) / fork
+        colors = prop.getColors(rel)
+        self.set(colors=colors)
+
+    def onNewGeometry(self):
+        self.clear()
+
+
 def addSettings(UIHandler, loupe):
     from UI.Templates import ObjectComboBox
 
@@ -431,13 +630,15 @@ def addSettings(UIHandler, loupe):
 
     pane = loupe.getSettingsPane("ATOMS")
     comboBox = pane.settingsWidgets.get("Coloring")
-    comboBox.addItems(["Mean Force Error", "Force Error", "Mean Force Norm Error", "Force Norm Error"])
+    comboBox.addItems(["Mean Force Error", "Force Error", "Mean Force Norm Error", "Force Norm Error", "Mean Acceleration Norm Error", "Acceleration Norm Error"])
 
     loupe.addCanvasProperty(ForceErrorColorProperty)
     loupe.addCanvasProperty(MeanForceErrorProperty)
     loupe.addCanvasProperty(ForceErrorProperty)
     loupe.addCanvasProperty(MeanForceNormErrorProperty)
     loupe.addCanvasProperty(ForceNormErrorProperty)
+    loupe.addCanvasProperty(MeanAccelerationNormErrorProperty)
+    loupe.addCanvasProperty(AccelerationNormErrorProperty)
 
     ## ADD BUTTONS AND SHIT
     # CONTAINER
@@ -453,6 +654,8 @@ def addSettings(UIHandler, loupe):
             or settings.get("atomColorType") == "Force Error"
             or settings.get("atomColorType") == "Mean Force Norm Error"
             or settings.get("atomColorType") == "Force Norm Error"
+            or settings.get("atomColorType") == "Mean Acceleration Norm Error"
+            or settings.get("atomColorType") == "Acceleration Norm Error"
         )
     )
 
