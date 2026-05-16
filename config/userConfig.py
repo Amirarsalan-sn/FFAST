@@ -76,11 +76,13 @@ class Settings(dict):
 default = Settings()
 config = Settings()
 
-with open("config/default.json") as f:
+_config_dir = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(_config_dir, "default.json")) as f:
     d = json.load(f)
     default.update(d)
-if os.path.exists("config/user.json"):
-    with open("config/user.json") as f:
+_user_json = os.path.join(_config_dir, "user.json")
+if os.path.exists(_user_json):
+    with open(_user_json) as f:
         c = json.load(f)
         config.update(c)
 
