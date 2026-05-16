@@ -107,7 +107,8 @@ class UIHandler(EventClass):
                 app.setStyle("Fusion")
 
             # Load styles
-            with open("style.qss", "r") as styleFile:
+            _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            with open(os.path.join(_root, "style.qss"), "r") as styleFile:
                 styleSheet = styleFile.read()
 
             # set variables
