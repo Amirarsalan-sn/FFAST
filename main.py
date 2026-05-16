@@ -129,6 +129,30 @@ def main(workdir=None):
     event_loop.close()
 
 
+def cli():
+    parser = argparse.ArgumentParser(
+        description="FFAST - Force Field Analysis and Visualization Tool"
+    )
+    parser.add_argument(
+        "--workdir",
+        type=str,
+        default=None,
+        help="Set working directory for file dialogs (default: current directory)",
+    )
+    args = parser.parse_args()
+
+    workdir = None
+    if args.workdir:
+        workdir = os.path.abspath(os.path.expanduser(args.workdir))
+        if not os.path.isdir(workdir):
+            print(
+                f"Warning: Working directory '{workdir}' does not exist. Using current directory."
+            )
+            workdir = None
+
+    main(workdir=workdir)
+
+
 if __name__ == "__main__":
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description='FFAST - Force Field Analysis and Visualization Tool')
