@@ -13,7 +13,12 @@ def setupLogger(level=logging.INFO):
     logging.basicConfig(
         level=level,
         format="[%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler("debug.log"), logging.StreamHandler()],
+        handlers=[
+            logging.FileHandler(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug.log")
+            ),
+            logging.StreamHandler(),
+        ],
     )
 
 
@@ -89,7 +94,8 @@ def loadModules(UI, env, headless=False):
     mods = {}
     depGraph = {}
 
-    for path in glob.glob(os.path.join("modules", "*.py")):
+    _root = os.path.dirname(os.path.abspath(__file__))
+    for path in glob.glob(os.path.join(_root, "modules", "*.py")):
         name = os.path.basename(path).replace(".py", "")
 
         spec = importlib.util.spec_from_file_location(f"module_{name}", path)
