@@ -320,7 +320,7 @@ class ForceErrorColorProperty(CanvasProperty):
             accelNormMax=accelMax,
             accelNormMeanMin=accelMeanMin,
             accelNormMeanMax=accelMeanMax,
-            isZeroModel=data[0]["model"].fingerprint == "zeroModel",
+            isZeroModel=model.fingerprint == "zeroModel",
         )
 
     def manualUpdate(self):
