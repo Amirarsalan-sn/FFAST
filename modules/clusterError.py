@@ -420,6 +420,10 @@ def loadUI(UIHandler, env):
 
             self.setDataDependencies("clusterForceError")
             self.setYLabel("Force MAE", getConfig("forceUnit"))
+            self.infoButton.setToolTip("""
+Forces Cluster Error Plot:
+Structures are first clustered by their atoms' pairwise distances (similar molecular structures will be in the same cluster). Then, structures inside each of these structures are again clustered based on their energies. Thus, similar structures with similar energies will be in the same cluster. Afterwards, MAE of the predicted forces is calculated per cluster and shown in the plot.
+            """)
 
     class EnergyClusterErrorPlot(ClusterErrorPlot):
         def __init__(self, handler, **kwargs):
@@ -432,6 +436,10 @@ def loadUI(UIHandler, env):
             self.eventSubscribe(
                 "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
             )
+            self.infoButton.setToolTip("""
+            Energy Cluster Error Plot:
+            Structures are first clustered by their atoms' pairwise distances (similar molecular structures will be in the same cluster). Then, structures inside each of these clusters are again clustered based on their energies. Thus, similar structures with similar energies will be in the same cluster. Afterwards, MAE of the predicted energies is calculated per cluster and shown in the plot.
+""")
 
         def onEnergyShiftChanged(self):
             shifted = self.handler.energyShiftEnabled
