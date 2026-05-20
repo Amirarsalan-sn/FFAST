@@ -110,6 +110,9 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("forcesErrorSubsysDist")
             self.setXLabel("Forces MAE", getConfig("forceUnit"))
             self.setYLabel("Density")
+            self.infoButton.setToolTip("""
+The same as Total Force Errors !
+            """)
 
 
         def addPlots(self):
