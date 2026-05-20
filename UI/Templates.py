@@ -1427,10 +1427,10 @@ class SettingsCheckBox(SettingsWidgetBase):
         self.checkBox.stateChanged.connect(self.callback)
 
     def _getValue(self):
-        return self.checkBox.checkState()
+        return self.checkBox.isChecked()
 
     def _setValue(self, b):
-        self.checkBox.setChecked(b)
+        self.checkBox.setChecked(bool(b) if b is not None else False)
 
 
 class SettingsComboBox(SettingsWidgetBase):
