@@ -248,6 +248,10 @@ def loadUI(UIHandler, env):
             )
             self.setXLabel("Forces MAE", getConfig("forceUnit"))
             self.setYLabel("Density")
+            self.infoButton.setToolTip("""
+Force MAE distribution of a specific atom across the structures inside the dataset.
+Each atom's Force MAE in each structure (structures might include multiple atoms of same type) is calculated, then, a probability distribution is plotted based on that.      
+""")
 
         def addPlots(self):
 
