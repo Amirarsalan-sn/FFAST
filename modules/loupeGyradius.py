@@ -117,6 +117,7 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradius")
             self.setXLabel("Configuration index")
             self.setYLabel("Gyration radius")
+            self.infoButton.setToolTip("Gyration radius of each structure inside the dataset")
 
             self.slider = Slider(
                 parent=self,
@@ -170,6 +171,7 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradius")
             self.setXLabel("Configuration index")
             self.setYLabel("Gyradius/Energy (Normalised)")
+            self.infoButton.setToolTip("Gyration radius and Energy of each structure in the dataset.")
 
             self.slider = Slider(
                 parent=self,
@@ -233,6 +235,7 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradius", "forcesError")
             self.setXLabel("Configuration index")
             self.setYLabel("Gyradius/Forces MAE (Normalised)")
+            self.infoButton.setToolTip("Gyration radius of each structure along with its predicted force MAE.")
 
             self.slider = Slider(
                 parent=self,
@@ -305,6 +308,7 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradiusDist")
             self.setXLabel("Gyradius")
             self.setYLabel("Density")
+            self.infoButton.setToolTip("Gyration radius distribution.")
 
         def addPlots(self):
             for data in self.getWatchedData():
