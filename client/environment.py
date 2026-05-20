@@ -271,7 +271,7 @@ class Environment(EventClass):
 
             try:
                 E = aseObject.getEnergies()
-            except PropertyNotImplementedError:
+            except (PropertyNotImplementedError, RuntimeError):
                 logger.warning(
                     "Energy not available in prediction file. "
                     "Loading forces only."
@@ -279,7 +279,7 @@ class Environment(EventClass):
                 E = None
             try:
                 F = aseObject.getForces()
-            except PropertyNotImplementedError:
+            except (PropertyNotImplementedError, RuntimeError):
                 logger.warning(
                     "Forces not available in prediction file. "
                     "Loading energies only."

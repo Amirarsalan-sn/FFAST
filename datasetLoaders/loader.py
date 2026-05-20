@@ -1,4 +1,5 @@
 from collections import Counter
+from ase.calculators.calculator import PropertyNotImplementedError
 import numpy as np
 import os
 from utils import md5FromArraysAndStrings, removeExtension
@@ -111,9 +112,17 @@ class DatasetLoader(EventClass):
     def getFingerprint(self):
         z = self.getElements()
         r = self.getCoordinates()
-        e = self.getEnergies()
-        f = self.getForces()
-        fp = md5FromArraysAndStrings(z, r, e, f)
+        try:
+            e = self.getEnergies()
+        except (PropertyNotImplementedError, RuntimeError):
+            logger.warning("Energy not available for fingerprint. Using coordinates only.")
+            e = None
+        try:
+            f = self.getForces()
+        except (PropertyNotImplementedError, RuntimeError):
+            logger.warning("Forces not available for fingerprint. Using coordinates only.")
+            f = None
+        fp = md5FromArraysAndStrings(*(x for x in (z, r, e, f) if x is not None))
 
         return fp
 
