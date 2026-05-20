@@ -2,6 +2,32 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
+def kabschTransforms(r, r0, indices=None):
+    """Return [translation, rotation, translation] that aligns r onto r0.
+
+    Uses only atoms at `indices` to compute the rotation (e.g. heavy atoms),
+    but the returned transforms are applied to all atoms.
+    Compatible with canvas.currentTransformations.
+    """
+    if indices is None:
+        indices = np.arange(len(r))
+
+    r_sel = r[indices]
+    r0_sel = r0[indices]
+
+    tgt_centroid = r_sel.mean(axis=0)
+    ref_centroid = r0_sel.mean(axis=0)
+
+    cov = (r_sel - tgt_centroid).T @ (r0_sel - ref_centroid)
+    v, _, wt = np.linalg.svd(cov)
+    det_sign = np.sign(np.linalg.det(v @ wt))
+    correction = np.eye(3, dtype=np.float64)
+    correction[2, 2] = det_sign if det_sign != 0 else 1.0
+    rotation = v @ correction @ wt
+
+    return [-tgt_centroid, rotation, ref_centroid]
+
+
 def getVV0Angle(v, v0, directionVector=None):
     (u, u0) = v / np.linalg.norm(v), v0 / np.linalg.norm(v0)
     if directionVector is None:
