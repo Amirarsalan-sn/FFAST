@@ -110,6 +110,9 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("totalForcesErrorDist")
             self.setXLabel("Forces MAE", getConfig("forceUnit"))
             self.setYLabel("Density")
+            self.infoButton.setToolTip("""
+This plot shows the difference (MEA) between the predicted net force applied to the system, and the ab-inito net force (either across different samples of the same molecular structure evolving over time, aka fixed datasets, or across different samples of different systems, aka variable datasets).
+            """)
 
 
         def addPlots(self):
