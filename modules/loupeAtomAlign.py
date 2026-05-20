@@ -162,14 +162,15 @@ def addSettings(UIHandler, loupe):
         else None,
     )
 
-    ## SETTINGS PANE
+    ## SETTINGS PANE (legacy — hidden; use Kabsch alignment instead)
     pane = loupe.getSettingsPane("ATOMS")
-    pane.addSetting(
+    alignCheckBox = pane.addSetting(
         "CheckBox",
         "Align Atoms",
         settingsKey="alignAtoms",
         toolTip="Select 3 atoms to visualise on a fixed plane",
     )
+    alignCheckBox.setHideCondition(lambda: True)
 
     container = pane.addSetting(
         "Container", "Align Atoms Indices Container", layout="horizontal"
