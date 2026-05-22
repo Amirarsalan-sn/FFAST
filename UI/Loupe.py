@@ -665,6 +665,7 @@ class Loupe(Widget, EventChildClass):
         # we force when sub indices change, becasue thats not reflected in the key
         if (not force) and (key == self.selectedDatasetKey):
             return
+        self.settings.saveForDataset(self.selectedDatasetKey)
         self.selectedDatasetKey = key
 
         dataset = self.getSelectedDataset()
@@ -672,6 +673,7 @@ class Loupe(Widget, EventChildClass):
 
         self.index = 0
         self.indexSlider.setMinMax(0, dataset.getN() - 1)
+        self.settings.restoreForDataset(key)
         self.updateCurrentIndex()
 
     def getSelectedDataset(self):

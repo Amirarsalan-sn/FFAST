@@ -122,6 +122,11 @@ def loadLoupe(UIHandler, loupe):
     settings.addParameters(
         **{
             "originCenterOfMass": [True, "updateGeometry"],
+        }
+    )
+    settings.markAsPerDataset("originCenterOfMass")
+    settings.addParameters(
+        **{
             "cameraOrthographic": [
                 False,
                 updateOrthographicCamera,
