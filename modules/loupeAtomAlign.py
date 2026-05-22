@@ -144,6 +144,9 @@ def addSettings(UIHandler, loupe):
             "alignAtomsConfIndex": [0, "updateGeometry"],
         }
     )
+    settings.markAsPerDataset("alignAtoms")
+    settings.markAsPerDataset("alignAtomsIndices")
+    settings.markAsPerDataset("alignAtomsConfIndex")
     settings.addParameterActions(
         "alignAtomsIndices", updateAlignAtomsConfIndex
     )

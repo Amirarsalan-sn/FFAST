@@ -11,6 +11,9 @@ class Settings(dict):
         self.actions = {}  # what actions exist
         self.pendingActions = set()  # which actions are currently pending
         self.parameterActions = {}  # which parameter does which action
+        self._defaults = {}
+        self._perDatasetKeys = set()
+        self._perDatasetValues = {}  # {dataset_key: {setting_key: value}}
 
     def addAction(self, actionName, func):
         self.actions[actionName] = func
@@ -22,7 +25,27 @@ class Settings(dict):
 
     def addParameter(self, key, defaultValue, *actions):
         self[key] = defaultValue
+        self._defaults[key] = defaultValue
         self.addParameterActions(key, *actions)
+
+    def markAsPerDataset(self, key):
+        self._perDatasetKeys.add(key)
+
+    def saveForDataset(self, dataset_key):
+        if dataset_key is None:
+            return
+        self._perDatasetValues[dataset_key] = {
+            k: self[k] for k in self._perDatasetKeys if k in self
+        }
+
+    def restoreForDataset(self, dataset_key):
+        if not self._perDatasetKeys:
+            return
+        saved = self._perDatasetValues.get(dataset_key, {})
+        for k in self._perDatasetKeys:
+            value = saved.get(k, self._defaults.get(k, self.get(k)))
+            self.setParameter(k, value, refresh=False)
+        self.doPendingActions()
 
     def addParameterActions(self, key, *actions):
         if len(actions) <= 0:

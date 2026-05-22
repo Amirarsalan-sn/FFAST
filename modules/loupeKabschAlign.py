@@ -55,6 +55,8 @@ def addSettings(UIHandler, loupe):
             "kabschAlignHeavyOnly": [True, "updateGeometry"],
         }
     )
+    settings.markAsPerDataset("kabschAlign")
+    settings.markAsPerDataset("kabschAlignHeavyOnly")
 
     ## MUTUAL EXCLUSIVITY
     def _disable_others_for_kabsch():
