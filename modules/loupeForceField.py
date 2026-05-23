@@ -1,6 +1,7 @@
 import numpy as np
 import logging
-from UI.loupeProperties import VisualElement
+from functools import partial
+from UI.loupeProperties import VisualElement, AtomSelectionBase
 
 logger = logging.getLogger("FFAST")
 DEPENDENCIES = ["loupeAtoms"]
@@ -9,9 +10,6 @@ _SHAFT_RADIUS = 0.05
 _HEAD_RADIUS = 0.12
 _HEAD_LENGTH = 0.25   # absolute world-unit cone height, constant regardless of force magnitude
 _N_SEGMENTS = 8
-_COLOR_TOWARD = np.array([1.0, 0.55, 0.1, 1.0])  # warm orange — arrow tip points at camera
-_COLOR_AWAY   = np.array([0.25, 0.5, 1.0, 1.0])  # blue — arrow tail points at camera
-
 
 def _batch_rotation_z_to(U):
     """(N,3) unit vectors → (N,3,3) rotation matrices mapping +z to each U[i]."""
@@ -53,7 +51,9 @@ def _batch_rotation_z_to(U):
 
 
 def _build_arrow_mesh(starts, ends):
-    """Batched cylinder+cone mesh. Returns (vertices (V,3), faces (F,3)) or (None, None)."""
+    """Batched cylinder+cone mesh.
+    Returns (vertices (V,3), faces (F,3), unit_dirs (N,3)) or (None, None, None).
+    """
     n = _N_SEGMENTS
     angles = np.linspace(0, 2 * np.pi, n, endpoint=False)
     cos_a, sin_a = np.cos(angles), np.sin(angles)
@@ -89,7 +89,7 @@ def _build_arrow_mesh(starts, ends):
     lengths = np.linalg.norm(D, axis=1)
     mask = lengths > 1e-10
     if not np.any(mask):
-        return None, None
+        return None, None, None
 
     S = starts[mask]
     D = D[mask]
@@ -112,10 +112,10 @@ def _build_arrow_mesh(starts, ends):
     # geometrically in front of the shaft/cone side faces — polygon offset
     # alone can't guarantee this since flat caps have DZ=0 but slanted sides don't
     _CAP_BIAS = 0.002
-    sv  = _transform(shaft_can,     shaft_L,  S)                         # (N, 2n,   3)
+    sv  = _transform(shaft_can,     shaft_L,  S)                            # (N, 2n,   3)
     cv  = _transform(cone_can,      np.full(N, _HEAD_LENGTH), cone_starts)  # (N, n+1,  3)
-    bsv = _transform(shaft_cap_can, None,     S              - _CAP_BIAS * U)  # shaft bottom cap
-    bcv = _transform(cone_cap_can,  None,     cone_starts    - _CAP_BIAS * U)  # cone base cap
+    bsv = _transform(shaft_cap_can, None,     S           - _CAP_BIAS * U)  # shaft bottom cap
+    bcv = _transform(cone_cap_can,  None,     cone_starts - _CAP_BIAS * U)  # cone base cap
 
     all_verts = np.vstack([sv.reshape(-1, 3), bsv.reshape(-1, 3),
                            cv.reshape(-1, 3), bcv.reshape(-1, 3)])
@@ -134,41 +134,30 @@ def _build_arrow_mesh(starts, ends):
         (cap_faces[None]   + bc_off).reshape(-1, 3),  # N*n   — cone base cap
     ])
 
-    return all_verts, all_faces, U  # U: (N,3) unit arrow directions for color computation
+    return all_verts, all_faces
 
 
-def _cam_forward(canvas):
-    """Camera forward direction in world space (unit vector)."""
-    try:
-        cam = canvas.camera
-        p0 = cam.transform.map(np.array([[0., 0.,  0., 1.]]))[0, :3]
-        p1 = cam.transform.map(np.array([[0., 0., -1., 1.]]))[0, :3]
-        d = p1 - p0
-        norm = np.linalg.norm(d)
-        if norm > 1e-10:
-            return d / norm
-    except Exception:
-        pass
-    return np.array([0., 0., -1.])
+class ForceVectorSelect(AtomSelectionBase):
+    """Selection tool for choosing which atoms show force vectors."""
 
+    multiselect = 10000
+    rectangleSelect = True
+    label = "Force Vector Atoms"
 
-def _face_colors_from_dirs(unit_dirs, fwd):
-    """Per-face colors: each arrow gets one color lerped by dot(arrow_dir, -fwd).
-    dot=-1 (away from camera) → _COLOR_AWAY, dot=+1 (toward) → _COLOR_TOWARD.
-    Face layout: N*(2n + n + n + n) = N*5n, section-major order.
-    """
-    n = _N_SEGMENTS
-    t = np.clip(-unit_dirs @ fwd, -1.0, 1.0)   # (N,) in [-1, 1]
-    alpha = (t + 1.0) * 0.5                      # 0=away, 1=toward
-    colors = (_COLOR_AWAY[None] * (1 - alpha[:, None])
-              + _COLOR_TOWARD[None] * alpha[:, None])  # (N, 4)
-    # sections have 2n, n, n, n faces each — all in arrow-major order within each section
-    return np.vstack([
-        np.repeat(colors, 2 * n, axis=0),
-        np.repeat(colors, n,     axis=0),
-        np.repeat(colors, n,     axis=0),
-        np.repeat(colors, n,     axis=0),
-    ])
+    def __init__(self, canvas, **kwargs):
+        super().__init__(canvas, **kwargs)
+        # Restore persisted selection for this dataset
+        indices = canvas.settings.get("forceVectorsAtomIndices")
+        if indices:
+            self.selectedPoints = list(indices)
+            canvas.visualRefresh(force=True)
+
+    def selectCallback(self):
+        self.canvas.loupe.settings.setParameter(
+            "forceVectorsAtomIndices",
+            list(self.selectedPoints),
+            refresh=True,
+        )
 
 
 class ForceVectorsElement(VisualElement):
@@ -182,14 +171,17 @@ class ForceVectorsElement(VisualElement):
             vertices=np.zeros((3, 3)),
             faces=np.array([[0, 1, 2]]),
             parent=parent,
-            color=(0.95, 0.95, 0.95, 1.0),
-            shading="flat",
+            color=(1.0, 1.0, 1.0, 1.0),
+            shading="smooth",
         )
         self.mesh.set_gl_state(
             depth_test=True,
-            polygon_offset_fill=True,
-            polygon_offset=(-50.0, -50.0),  # shift toward camera so atoms don't occlude arrows
         )
+        # Boost ambient so back-facing surfaces stay near-white instead of dark grey.
+        # Default ambient is ~0.1; raising to 0.7 keeps smooth-shading 3D cues
+        # while preventing dark patches.
+        if hasattr(self.mesh, "shading_filter"):
+            self.mesh.shading_filter.ambient_light = (0.7, 0.7, 0.7, 1.0)
         super().__init__(*args, **kwargs, singleElement=None)
 
     def show(self):
@@ -287,14 +279,36 @@ class ForceVectorsElement(VisualElement):
         else:
             normF = F * lengthFactor / 500
 
+        # --- atom filter ---
+        filter_enabled = settings.get("forceVectorsFilterEnabled")
+        if filter_enabled:
+            atom_indices = settings.get("forceVectorsAtomIndices")
+            if not atom_indices:
+                # Empty selection → show nothing
+                self._starts = None
+                self._ends = None
+                self.queueVisualRefresh()
+                return
+            n_atoms = len(R)
+            if max(atom_indices) >= n_atoms:
+                # Variable-size dataset: selection invalid for this frame → show nothing
+                self._starts = None
+                self._ends = None
+                self.queueVisualRefresh()
+                return
+            idx = np.array(atom_indices)
+            R = R[idx]
+            normF = normF[idx]
+
         self._starts = R
         self._ends = R + normF
         self.queueVisualRefresh()
 
-    def onCameraChange(self):
-        self.queueVisualRefresh()
+    def _draw(self, picking=False, **_):
+        if picking:
+            self.mesh.visible = False  # hide from picking pass; white mesh encodes as idx 65535
+            return
 
-    def _draw(self, **kwargs):
         show = self.canvas.settings.get("showForceVectors")
 
         if self._starts is None or not show:
@@ -302,34 +316,51 @@ class ForceVectorsElement(VisualElement):
             return
 
         self.show()
-        verts, faces, unit_dirs = _build_arrow_mesh(self._starts, self._ends)
+        verts, faces = _build_arrow_mesh(self._starts, self._ends)
 
         if verts is None:
             self.hide()
             return
 
-        fwd = _cam_forward(self.canvas)
-        face_colors = _face_colors_from_dirs(unit_dirs, fwd)
-        self.mesh.set_data(vertices=verts, faces=faces, face_colors=face_colors)
+        self.mesh.set_data(vertices=verts, faces=faces)
 
 
 def loadLoupe(UIHandler, loupe):
-    from UI.Templates import SettingsPane, ObjectComboBox
-    from PySide6.QtWidgets import QLabel
+    from UI.Templates import SettingsPane, ObjectComboBox, PushButton
+    from PySide6.QtWidgets import QLabel, QHBoxLayout, QWidget
 
     loupe.addVisualElement(ForceVectorsElement, "ForceVectorsElement")
 
     settings = loupe.settings
+
+    def _on_atom_indices_changed(loupe):
+        """Sync running ForceVectorSelect tool when settings restore on dataset switch."""
+        canvas = loupe.canvas
+        if not canvas.isActiveAtomSelectTool(ForceVectorSelect):
+            return
+        tool = canvas.activeAtomSelectTool
+        indices = canvas.settings.get("forceVectorsAtomIndices")
+        if indices != tool.selectedPoints:
+            tool.selectedPoints = list(indices)
+            canvas.visualRefresh(force=True)
+
     settings.addParameters(
         **{
             "showForceVectors": [False, "updateGeometry"],
             "forceVectorsModelKey": [None, "updateGeometry"],
-            "forceVectorsLength": [5, "updateGeometry"],
+            "forceVectorsLength": [10, "updateGeometry"],
             "forceVectorsAvgWindow": [0, "updateGeometry"],
-            "forceVectorsNormalised": [False, "updateGeometry"],
+            "forceVectorsNormalised": [True, "updateGeometry"],
+            "forceVectorsFilterEnabled": [False, "updateGeometry"],
+            "forceVectorsAtomIndices": [
+                [],
+                partial(_on_atom_indices_changed, loupe),
+                "updateGeometry",
+            ],
         }
     )
     settings.markAsPerDataset("forceVectorsModelKey")
+    settings.markAsPerDataset("forceVectorsAtomIndices")
 
     # SETTINGS PANE
     pane = SettingsPane(UIHandler, loupe.settings, parent=loupe)
@@ -339,7 +370,7 @@ def loadLoupe(UIHandler, loupe):
         "CheckBox",
         "Enable",
         settingsKey="showForceVectors",
-        toolTip="Show a vector field corresponding to the forces",
+        toolTip="Overlay force vectors on each atom as 3D arrows.",
     )
 
     # SOURCE SELECTOR
@@ -381,15 +412,15 @@ def loadLoupe(UIHandler, loupe):
         "Slider",
         "Length",
         settingsKey="forceVectorsLength",
-        toolTip="Change the length of the force vectors",
+        toolTip="Scale factor for arrow length. Higher = longer arrows relative to bond lengths.",
         nMin=1,
-        nMax=50,
+        nMax=500,
     )
     pane.addSetting(
         "Slider",
         "Avg. window",
         settingsKey="forceVectorsAvgWindow",
-        toolTip="Set the number of points to average around for a smoother result.",
+        toolTip="Temporal smoothing: average forces over ±N frames around the current frame. 0 = no smoothing.",
         nMin=0,
         nMax=10000,
     )
@@ -397,5 +428,52 @@ def loadLoupe(UIHandler, loupe):
         "CheckBox",
         "Normalised",
         settingsKey="forceVectorsNormalised",
-        toolTip="If enabled, set the longest vector for every frame to the same length",
+        toolTip=(
+            "Rescale arrows so the largest force in each frame has a fixed length. "
+            "Useful for comparing directions when magnitudes vary widely."
+        ),
     )
+
+    # ATOM FILTER SECTION
+    pane.addSetting(
+        "CheckBox",
+        "Filter to selection",
+        settingsKey="forceVectorsFilterEnabled",
+        toolTip=(
+            "Show force arrows only for the selected atom subset. "
+            "Useful for large systems where rendering all arrows is slow. "
+            "On variable-size datasets, arrows hide on frames where the "
+            "selection is out of range."
+        ),
+    )
+
+    # Select / Clear buttons in a horizontal row
+    filterRow = QWidget()
+    filterRowLayout = QHBoxLayout(filterRow)
+    filterRowLayout.setContentsMargins(0, 0, 0, 0)
+
+    selectBtn = PushButton("Select atoms")
+    selectBtn.setToolTip(
+        "Enter atom-picking mode to build the force vector subset. "
+        "Click atoms to toggle them; hold Ctrl and drag to box-select a region. "
+        "Click again to exit picking mode."
+    )
+    selectBtn.clicked.connect(
+        lambda: loupe.setActiveAtomSelectTool(ForceVectorSelect)
+    )
+
+    clearBtn = PushButton("Clear")
+    clearBtn.setToolTip("Remove all atoms from the force vector subset.")
+
+    def _clear_selection():
+        settings.setParameter("forceVectorsAtomIndices", [], refresh=True)
+        canvas = loupe.canvas
+        if canvas.isActiveAtomSelectTool(ForceVectorSelect):
+            canvas.activeAtomSelectTool.selectedPoints = []
+            canvas.visualRefresh(force=True)
+
+    clearBtn.clicked.connect(_clear_selection)
+
+    filterRowLayout.addWidget(selectBtn)
+    filterRowLayout.addWidget(clearBtn)
+    pane.layout.addWidget(filterRow)
