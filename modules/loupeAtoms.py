@@ -195,6 +195,11 @@ class AtomsSelectedElement(VisualElement):
         )
 
         if selected is not None:
+            n = len(self.pos)
+            selected = [i for i in selected if i < n]
+            if not selected:
+                self.scatter.visible = False
+                return
             pos = self.pos[selected]
             size = self.sizes[selected]
             scale = self.canvas.settings.get("atomSizeScale", 1.0)

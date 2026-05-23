@@ -116,7 +116,7 @@ class SceneCanvas(scene.SceneCanvas):
         indices = []
         for color in uniqueColors:
             idx = self.colorToIndex(color)
-            if idx is not None:
+            if idx is not None and idx < self.widget.nAtoms:
                 indices.append(idx)
 
         if refresh:
