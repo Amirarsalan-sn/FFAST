@@ -345,14 +345,16 @@ class Environment(EventClass):
         if on_deletion:
             maximum = 0
             for ds in self.datasets.values():
-                if ds.N > maximum:
-                    maximum = ds.N
+                n = ds.getN()
+                if n is not None and n > maximum:
+                    maximum = n
             self.maxDatasetSize = maximum
             logger.info(f"Maximum dataset size updated to : {maximum}")
         else:
-            if dataset.N > self.maxDatasetSize:
-                self.maxDatasetSize = dataset.N
-                logger.info(f"Maximum dataset size updated to : {dataset.N}")
+            n = dataset.getN()
+            if n is not None and n > self.maxDatasetSize:
+                self.maxDatasetSize = n
+                logger.info(f"Maximum dataset size updated to : {n}")
 
     def getMaxSize(self):
         return self.maxDatasetSize

@@ -504,8 +504,17 @@ class ExpandingScrollArea(QtWidgets.QScrollArea):
         # self.setMinimumWidth(w+10)
         QtWidgets.QScrollArea.resizeEvent(self, *args)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Defer size update so the layout pass has completed before we
+        # ask PyQtGraph viewports to repaint (fixes blank plots on first
+        # tab switch).
+        QtCore.QTimer.singleShot(0, self.forceUpdateSize)
+
     def forceUpdateSize(self):
         self.resizeEvent(QtGui.QResizeEvent(self.size(), QtCore.QSize()))
+        if self.contentWidget is not None:
+            self.contentWidget.update()
 
 
 class HorizontalExpandingScrollArea(QtWidgets.QScrollArea):
