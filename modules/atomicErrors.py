@@ -164,7 +164,7 @@ def loadUI(UIHandler, env):
 
     class AtomicDatasetModelSelector(DatasetModelSelector):
 
-        lastSelectedDataset = None
+        lastSelectedDatasets = set()
 
         def __init__(self, UIHandler, parent=None):
             super().__init__(UIHandler, parent=parent)
@@ -173,8 +173,6 @@ def loadUI(UIHandler, env):
             )
             self.atomsList.setOnUpdate(self.update)
             self.layout.addWidget(self.atomsList)
-
-            self.datasetsList.singleSelection = True
 
         def getSelectedAtomIndices(self):
             return [x.atomIndex for x in self.atomsList.getSelectedWidgets()]
@@ -189,47 +187,41 @@ def loadUI(UIHandler, env):
 
         def update(self):
             modelKeys, datasetKeys = self.getSelectedKeys()
-            if len(datasetKeys) > 1:
-                logger.error(
-                    f"Too many keys in singleton dataset selector: {datasetKeys}"
-                )
-                return
 
-            key = None
-            if len(datasetKeys) > 0:
-                key = datasetKeys[0]
-            if key != self.lastSelectedDataset:
-                self.lastSelectedDataset = key
+            datasetKeySet = set(datasetKeys)
+            if datasetKeySet != self.lastSelectedDatasets:
+                self.lastSelectedDatasets = datasetKeySet
                 self.updateAtomsList()
 
-            nModels, nTypes = (
-                len(modelKeys),
-                len(self.getSelectedAtomIndices()),
-            )
+            nModels = len(modelKeys)
+            nDatasets = len(datasetKeys)
+            nTypes = len(self.getSelectedAtomIndices())
 
-            self.atomsList.singleSelection = nModels > 1
+            # single atom unlocks both axes; multiple atoms lock to one pair
+            self.atomsList.singleSelection = nModels > 1 or nDatasets > 1
             self.modelsList.singleSelection = nTypes > 1
+            self.datasetsList.singleSelection = nTypes > 1
 
             DatasetModelSelector.update(self)
 
         def updateAtomsList(self):
-            key = self.lastSelectedDataset
+            keys = self.lastSelectedDatasets
 
             self.atomsList.removeWidgets(clear=True)
-            if key is not None:
+
+            elements = set()
+            for key in keys:
                 dataset = self.handler.env.getDataset(key)
-                if dataset is None:
-                    return
+                if dataset is not None:
+                    elements |= set(dataset.getElements())
 
-                elements = set(dataset.getElements())
+            if len(elements) > 0:
+                label = AtomLabel(0, parent=self.atomsList)  # All
+                self.atomsList.addWidget(label)
 
-                if len(elements) > 0:
-                    label = AtomLabel(0, parent=self.atomsList)  # All
-                    self.atomsList.addWidget(label)
-
-                for i in elements:
-                    label = AtomLabel(i, parent=self.atomsList)
-                    self.atomsList.addWidget(label)
+            for i in sorted(elements):
+                label = AtomLabel(i, parent=self.atomsList)
+                self.atomsList.addWidget(label)
 
     dataselector = AtomicDatasetModelSelector(UIHandler, parent=ct)
     ct.setDataSelector(dataselector)
@@ -279,6 +271,8 @@ Each atom's Force MAE in each structure (structures might include multiple atoms
                             continue
 
                         atomDE = de.get(atom)
+                        if atomDE is None:
+                            continue
 
                         x, y = atomDE.get("distX"), atomDE.get("distY")
 
@@ -301,6 +295,24 @@ Each atom's Force MAE in each structure (structures might include multiple atoms
             ct.addDataSelectionCallback(self.setModelDatasetDependencies)
             self.setDataDependencies("atomicForcesError", "forcesErrorMetrics")
 
+        def getPairs(self):
+            datasets = self.getDatasetDependencies()
+            models = self.getModelDependencies()
+            pairs = []
+            for d in datasets:
+                for m in models:
+                    has_data = (
+                        self.handler.env.getData(
+                            "forces", dataset=d, model=m
+                        ) is not None
+                        or self.handler.env.getData(
+                            "energy", dataset=d, model=m
+                        ) is not None
+                    )
+                    if has_data:
+                        pairs.append((d, m))
+            return pairs
+
         def getSize(self):
             atomTypes = dataselector.getSelectedAtomInfo()
             nCols = 2
@@ -309,24 +321,26 @@ Each atom's Force MAE in each structure (structures might include multiple atoms
             elif len(atomTypes) > 1:
                 nRows = len(atomTypes)
             else:
-                nRows = max(
-                    len(self.getModelDependencies()),
-                    len(self.getDatasetDependencies()),
-                )
+                nRows = len(self.getPairs())
             return (nRows, nCols)
 
         def getLeftHeader(self, i):
             atomTypes = dataselector.getSelectedAtomInfo()
-            if len(self.getDatasetDependencies()) > 1:
-                datasets = self.getDatasetDependencies()
-                dataset = self.handler.env.getDataset(datasets[i])
-                return f"{dataset.getDisplayName()}"
-            elif len(self.getModelDependencies()) > 1:
-                models = self.getModelDependencies()
-                model = self.handler.env.getModel(models[i])
-                return f"{model.getDisplayName()}"
-            else:
+            if len(atomTypes) > 1:
                 return f"{list(atomTypes.keys())[i]}"
+
+            pairs = self.getPairs()
+            if i >= len(pairs):
+                return "/"
+            dataset_key, model_key = pairs[i]
+            dataset = self.handler.env.getDataset(dataset_key)
+            model = self.handler.env.getModel(model_key)
+            ds_name = dataset.getDisplayName() if dataset else dataset_key
+            m_name = model.getDisplayName() if model else model_key
+            if len(self.getDatasetDependencies()) > 1:
+                return f"{ds_name} / {m_name}"
+            else:
+                return m_name
 
         def getTopHeader(self, i):
             if i == 0:
@@ -339,16 +353,21 @@ Each atom's Force MAE in each structure (structures might include multiple atoms
         def getValue(self, i, j):
             atomTypes = list(dataselector.getSelectedAtomInfo().keys())
             atomMode = len(atomTypes) > 1
-
-            models = self.getModelDependencies()
-            dataset = self.getDatasetDependencies()[0]
             value = None
 
             if atomMode:
+                datasets = self.getDatasetDependencies()
+                models = self.getModelDependencies()
+                if not datasets or not models:
+                    return
+                dataset = datasets[0]
                 model = models[0]
                 atomType = atomTypes[i]
             else:
-                model = models[i]
+                pairs = self.getPairs()
+                if i >= len(pairs) or not atomTypes:
+                    return
+                dataset, model = pairs[i]
                 atomType = atomTypes[0]
 
             if atomType == "All":
@@ -369,10 +388,13 @@ Each atom's Force MAE in each structure (structures might include multiple atoms
                 if de is None:
                     return
 
+                atomEntry = de.get(atomType)
+                if atomEntry is None:
+                    return
                 if j == 0:
-                    value = de.get(atomType)["mae"]
+                    value = atomEntry["mae"]
                 else:
-                    value = de.get(atomType)["rmse"]
+                    value = atomEntry["rmse"]
 
             if value is not None:
                 return f"{value:.2f}"
