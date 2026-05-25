@@ -134,10 +134,6 @@ def displacement_field(dR):
     res = minimize(func, x0, dR).x
     angles, rotation_center, total_displacement = res[0:3], res[3:6], res[6:9]
 
-    # print('angles', angles)
-    # print('rotation_center', rotation_center)
-    # print('total_displacement', total_displacement)
-
     return rotation(
         angles, rotation_center, translation(total_displacement, dR)
     )

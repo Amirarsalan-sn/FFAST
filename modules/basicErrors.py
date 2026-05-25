@@ -44,8 +44,6 @@ def loadData(env):
 
             ePred = env.getData("energy", model=model, dataset=dataset)
             eData = dataset.getEnergies()
-            print("eData:", eData)
-            print("ePred:", ePred.get("energy"))
 
             diff = ePred.get("energy") - eData
             shift = np.mean(diff)
