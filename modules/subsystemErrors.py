@@ -111,7 +111,7 @@ def loadUI(UIHandler, env):
             self.setXLabel("Forces MAE", getConfig("forceUnit"))
             self.setYLabel("Density")
             self.infoButton.setToolTip("""
-The same as Total Force Errors !
+This plot shows the difference (MAE) between the predicted net force applied to the system, and the ab-initio net force (either across different samples of the same molecular structure evolving over time, aka fixed datasets, or across different samples of different systems, aka variable datasets).
             """)
 
 
