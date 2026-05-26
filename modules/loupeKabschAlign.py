@@ -24,6 +24,12 @@ class KabschAlignProperty(CanvasProperty):
 
         r0 = canvas.getR(0)
 
+        if hasattr(canvas.dataset, "isVariable") and canvas.dataset.isVariable:
+            logger.warning(
+                "Kabsch alignment not supported for variable-size datasets"
+            )
+            return
+
         heavy_only = settings.get("kabschAlignHeavyOnly")
         indices = None
         if heavy_only:
