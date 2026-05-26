@@ -477,6 +477,27 @@ class ToolButton(QtWidgets.QToolButton):
         )
 
 
+class InfoToolButton(ToolButton):
+    """Info button: shows tooltip immediately on hover and on click."""
+
+    def __init__(self, **kwargs):
+        super().__init__(self._showTooltip, icon="info", **kwargs)
+
+    def _showTooltip(self, _checked=False):
+        tip = self.toolTip()
+        if tip and tip != "information":
+            pos = self.mapToGlobal(self.rect().bottomLeft())
+            QtWidgets.QToolTip.showText(pos, tip, self)
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self._showTooltip()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        QtWidgets.QToolTip.hideText()
+
+
 class ExpandingScrollArea(QtWidgets.QScrollArea):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
