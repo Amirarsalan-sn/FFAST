@@ -1,4 +1,4 @@
-from loaders.modelLoader import ModelLoader
+from modelLoaders.loader import ModelLoader
 import torch
 import numpy as np
 

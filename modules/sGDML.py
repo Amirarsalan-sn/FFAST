@@ -1,7 +1,7 @@
-from loaders.modelLoader import ModelLoader
+from modelLoaders.loader import ModelLoader
 import numpy as np
 from utils import md5FromArraysAndStrings
-from loaders.datasetLoader import DatasetLoader
+from datasetLoaders.loader import DatasetLoader
 
 
 class sGDMLModelLoader(ModelLoader):
@@ -47,6 +47,13 @@ class sGDMLModelLoader(ModelLoader):
             E (array): Nx1 array containing calculated energies.
             F (array): NxMx3 array containing calculated forces.
         """
+
+        # sGDML requires uniform molecular structures
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            raise ValueError(
+                "sGDML models require uniform molecular structures. "
+                "This dataset contains variable-sized molecules (different number of atoms per configuration)."
+            )
 
         if indices is None:
             R = dataset.getCoordinates()

@@ -1,3 +1,56 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ffast"
+version = "0.2.0"
+requires-python = ">=3.9,<3.12"
+dependencies = [
+    "ase>=3.26.0",
+    "numpy<2.0.0",
+    "pyopengl>=3.1.10",
+    "pyqtgraph>=0.13.7",
+    "pyside6==6.4.2",
+    "qasync>=0.28.0",
+    "scikit-learn>=1.6.1",
+    "scipy>=1.13.1",
+    "torch>=2.8.0",
+    "vispy>=0.16.1",
+    "msgpack>=1.0.0",
+    "websockets>=12.0",
+]
+
+[project.scripts]
+ffast = "main:cli"
+ffast-server = "server:cli"
+
+[tool.setuptools]
+py-modules = ["events", "headless", "headless_lattice", "main", "server", "tasks", "utils"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "UI",
+    "UI.*",
+    "client",
+    "client.*",
+    "cluster",
+    "cluster.*",
+    "config",
+    "config.*",
+    "datasetLoaders",
+    "datasetLoaders.*",
+    "modelLoaders",
+    "modelLoaders.*",
+    "modules",
+    "modules.*",
+]
+namespaces = true
+
+[tool.setuptools.package-data]
+config = ["default.json"]
+
 [tool.black]
 line-length = 79
 skip-magic-trailing-comma = 1

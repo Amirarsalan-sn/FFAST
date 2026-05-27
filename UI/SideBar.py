@@ -92,7 +92,9 @@ class DatasetModelItem(ObjectListItem, EventChildClass):
     def applyToolbar(self):
         layout = self.labelLayout
 
-        self.renameButton = ToolButton(self.renameObject, icon="rename")
+        self.renameButton = ToolButton(
+            self.renameObject, icon="rename", parent=self
+        )
         self.renameButton.setToolTip("Rename")
         self.renameButton.setButtonSize(self.iconSize, self.iconSize)
 
@@ -109,7 +111,9 @@ class DatasetModelItem(ObjectListItem, EventChildClass):
         if obj.loadeeType == "dataset":
 
             # save button
-            self.saveButton = ToolButton(self.saveDataset, icon="save")
+            self.saveButton = ToolButton(
+                self.saveDataset, icon="save", parent=self
+            )
             self.saveButton.setButtonSize(self.iconSize, self.iconSize)
             self.saveButton.setToolTip("Save dataset")
             layout.addWidget(self.saveButton)
@@ -120,7 +124,7 @@ class DatasetModelItem(ObjectListItem, EventChildClass):
                 and not obj.isAtomFiltered
             ):
                 self.freezeButton = ToolButton(
-                    self.freezeObject, icon="freeze"
+                    self.freezeObject, icon="freeze", parent=self
                 )
                 self.freezeButton.setButtonSize(self.iconSize, self.iconSize)
                 self.freezeButton.setToolTip(
@@ -130,14 +134,16 @@ class DatasetModelItem(ObjectListItem, EventChildClass):
 
             if (not obj.isSubDataset) or (obj.isAtomFiltered or obj.frozen):
                 self.deleteButton = ToolButton(
-                    self.deleteObject, icon="delete"
+                    self.deleteObject, icon="delete", parent=self
                 )
                 self.deleteButton.setButtonSize(self.iconSize, self.iconSize)
                 self.deleteButton.setToolTip("Remove")
                 layout.addWidget(self.deleteButton)
 
         else:
-            self.deleteButton = ToolButton(self.deleteObject, icon="delete")
+            self.deleteButton = ToolButton(
+                self.deleteObject, icon="delete", parent=self
+            )
             self.deleteButton.setButtonSize(self.iconSize, self.iconSize)
             self.deleteButton.setToolTip("Remove")
             layout.addWidget(self.deleteButton)
@@ -330,18 +336,18 @@ class TaskItem(ObjectListItem, EventChildClass):
         self.topLayout.addStretch()
 
         ## TOP TOOLBAR
-        self.cancelButton = ToolButton(self.cancel, icon="delete")
+        self.cancelButton = ToolButton(self.cancel, icon="delete", parent=self)
         self.cancelButton.setFixedSize(25, 25)
         self.setToolTip("Cancel task")
         self.topLayout.addWidget(self.cancelButton)
 
         ## BOTTOM
-        self.messageLabel = QtWidgets.QLabel("Working...")
+        self.messageLabel = QtWidgets.QLabel("Working...", parent=self)
         self.bottomLayout.addWidget(self.messageLabel)
 
         self.bottomLayout.addStretch()
 
-        self.progressLabel = QtWidgets.QLabel("/")
+        self.progressLabel = QtWidgets.QLabel("/", parent=self)
         self.bottomLayout.addWidget(self.progressLabel)
 
         ## BAR
@@ -356,6 +362,8 @@ class TaskItem(ObjectListItem, EventChildClass):
         prog=None,
         percent=False,
         message="Working...",
+        error=False,
+        title=None,
     ):
         if taskID is not self.id:
             return
@@ -381,6 +389,16 @@ class TaskItem(ObjectListItem, EventChildClass):
         # message
         self.messageLabel.setText(message)
         self.messageLabel.setToolTip(message)
+
+        # title update (e.g. after state change like "connected")
+        if title is not None:
+            self.titleLabel.setText(title)
+
+        # error styling
+        if error:
+            self.messageLabel.setStyleSheet("color: #e05555;")
+        else:
+            self.messageLabel.setStyleSheet("")
 
     def cancel(self):
         taskID = self.id
@@ -416,12 +434,12 @@ class SideBar(ContentBar):
     def setupContent(self):
 
         self.modelsList = ModelsObjectList(self.handler, parent=self)
-        self.addContent("MODELS", widget=self.modelsList)
-        self.setExpanded("MODELS")
+        self.addContent("PREDICTIONS/MODELS", widget=self.modelsList)
+        self.setExpanded("PREDICTIONS/MODELS")
 
         self.datasetsList = DatasetObjectList(self.handler, parent=self)
-        self.addContent("DATASETS", widget=self.datasetsList)
-        self.setExpanded("DATASETS")
+        self.addContent("REFERENCE DATASETS", widget=self.datasetsList)
+        self.setExpanded("REFERENCE DATASETS")
 
         self.tasksList = TasksList(self.handler, parent=self)
         self.addContent("TASKS", widget=self.tasksList)

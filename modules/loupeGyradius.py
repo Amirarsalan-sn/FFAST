@@ -21,16 +21,36 @@ class GyrationRadius(DataType):
     def data(self, dataset=None, model=None, taskID=None):
         env = self.env
 
-        R = dataset.getCoordinates()  # (N, nA, 3)
-        com = np.mean(R, axis=1)  # (N, 3)
+        R = dataset.getCoordinates()  # (N, nA, 3) or list of (nA_i, 3)
 
-        diff = R - com.reshape(-1, 1, 3)  # (N, nA, 3)
+        if isinstance(R, list):
+            # Variable dataset: process each molecule separately
+            gyradius_list = []
+            for i in range(len(R)):
+                r = R[i]  # (n_atoms_i, 3)
+                z = dataset.getElements(i)  # (n_atoms_i,)
 
-        s = np.sqrt(np.sum(diff ** 2, axis=2))  # (N, nA)
+                # Weighted center of mass
+                com = np.sum(z.reshape(-1, 1) * r, axis=0) / np.sum(z)  # (3,)
 
-        z = dataset.getElements()
+                # Distances from COM
+                diff = r - com  # (n_atoms_i, 3)
 
-        gyradius = np.sqrt(np.sum(z * s ** 2, axis=1) / np.sum(z))
+                # Distance magnitudes
+                s = np.sqrt(np.sum(diff ** 2, axis=1))  # (n_atoms_i,)
+
+                # Radius of gyration (weighted by atomic number)
+                gyradius = np.sqrt(np.sum(z * s ** 2) / np.sum(z))
+                gyradius_list.append(gyradius)
+
+            gyradius = np.array(gyradius_list)
+        else:
+            # Uniform dataset: existing code
+            com = np.mean(R, axis=1)  # (N, 3)
+            diff = R - com.reshape(-1, 1, 3)  # (N, nA, 3)
+            s = np.sqrt(np.sum(diff ** 2, axis=2))  # (N, nA)
+            z = dataset.getElements()
+            gyradius = np.sqrt(np.sum(z * s ** 2, axis=1) / np.sum(z))
 
         de = self.newDataEntity(gyradius=gyradius)  # , mae=mae)
         env.setData(de, self.key, model=model, dataset=dataset)
@@ -99,7 +119,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Gyration radius")
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
@@ -148,7 +172,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Gyradius/Energy (Normalised)")
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
@@ -207,7 +235,11 @@ def loadUI(UIHandler, env):
             self.setYLabel("Gyradius/Forces MAE (Normalised)")
 
             self.slider = Slider(
-                hasEditBox=True, label="Smoothing", nMin=1, nMax=10000
+                parent=self,
+                hasEditBox=True,
+                label="Smoothing",
+                nMin=1,
+                nMax=10000,
             )
             self.slider.setToolTip("Number of points in sliding average")
             self.addOption(self.slider)
@@ -226,8 +258,17 @@ def loadUI(UIHandler, env):
                 if data["dataTypeKey"] == "gyradius":
                     y = de.get("gyradius")
                 else:
-                    label = "Energy MAE __NAME__"
-                    y = np.abs(de.get("diff").reshape(-1))
+                    label = "Forces MAE __NAME__"
+                    diff = de.get("diff")
+
+                    # Handle variable vs uniform datasets
+                    if isinstance(diff, list):
+                        # Variable dataset: compute MAE per configuration
+                        y = np.array([np.mean(np.abs(d)) for d in diff])
+                    else:
+                        # Uniform dataset: compute MAE per configuration
+                        diff_flat = diff.reshape(diff.shape[0], -1)
+                        y = np.mean(np.abs(diff_flat), axis=1)
 
                 y = np.convolve(
                     y, np.ones(smoothing) / smoothing, mode="valid"

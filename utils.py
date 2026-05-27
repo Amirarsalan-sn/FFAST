@@ -13,7 +13,12 @@ def setupLogger(level=logging.INFO):
     logging.basicConfig(
         level=level,
         format="[%(levelname)s] %(message)s",
-        handlers=[logging.FileHandler("debug.log"), logging.StreamHandler()],
+        handlers=[
+            logging.FileHandler(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "debug.log")
+            ),
+            logging.StreamHandler(),
+        ],
     )
 
 
@@ -89,7 +94,8 @@ def loadModules(UI, env, headless=False):
     mods = {}
     depGraph = {}
 
-    for path in glob.glob(os.path.join("modules", "*.py")):
+    _root = os.path.dirname(os.path.abspath(__file__))
+    for path in glob.glob(os.path.join(_root, "modules", "*.py")):
         name = os.path.basename(path).replace(".py", "")
 
         spec = importlib.util.spec_from_file_location(f"module_{name}", path)
@@ -129,7 +135,14 @@ def md5FromArraysAndStrings(*args):
         elif isinstance(arg, np.ndarray):
             d = arg.ravel()
         elif isinstance(arg, list):
-            d = np.array(arg).ravel()
+            # Handle list of arrays (variable-sized datasets)
+            # Check if list contains numpy arrays
+            if len(arg) > 0 and isinstance(arg[0], np.ndarray):
+                # Flatten each array and concatenate
+                d = np.concatenate([a.ravel() for a in arg])
+            else:
+                # Regular list - try to convert to array
+                d = np.array(arg).ravel()
 
         fp.update(hashlib.md5(d).digest())
 

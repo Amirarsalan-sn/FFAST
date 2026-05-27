@@ -8,6 +8,7 @@ from UI.Templates import (
     Slider,
     ToolButton,
 )
+from UI.menuHandler import MenuHandler
 from PySide6 import QtCore, QtGui, QtWidgets
 import logging
 from vispy import scene
@@ -103,6 +104,10 @@ class SceneCanvas(scene.SceneCanvas):
         return idx
 
     def getAtomIndicesInRectangle(self, pos0, pos1, refresh=False):
+        # NOTE: This uses pixel-based picking, so it only selects VISIBLE atoms.
+        # Atoms hidden behind other atoms will not be selected.
+        # This is standard behavior for most 3D visualization tools.
+
         img = self.getPickingRender(pos0, pos1)
         colors = img.reshape(-1, 4)
         colors = colors[colors[:, 2] == 255, :3]
@@ -274,16 +279,18 @@ class InteractiveCanvas(Widget):
         self.props[prop.key] = prop
 
     def addAtomSelectToolbar(self):
-        self.atomSelectBar = Widget(color="@BGColor1", layout="horizontal")
+        self.atomSelectBar = Widget(
+            color="@BGColor1", layout="horizontal", parent=self
+        )
         self.atomSelectBar.setFixedHeight(40)
         self.layout.insertWidget(0, self.atomSelectBar)
 
         self.atomSelectBar.setContentsMargins(8, 0, 8, 0)
 
-        self.atomSelectBar.label1 = QtWidgets.QLabel("/")
-        self.atomSelectBar.label2 = QtWidgets.QLabel("/")
+        self.atomSelectBar.label1 = QtWidgets.QLabel("/", parent=self.atomSelectBar)
+        self.atomSelectBar.label2 = QtWidgets.QLabel("/", parent=self.atomSelectBar)
         self.atomSelectBar.cancelButton = ToolButton(
-            lambda x: self.setActiveAtomSelectTool(), "close"
+            lambda x: self.setActiveAtomSelectTool(), "close", parent=self.atomSelectBar
         )
 
         self.atomSelectBar.layout.addWidget(self.atomSelectBar.label1)
@@ -295,7 +302,22 @@ class InteractiveCanvas(Widget):
     def setDataset(self, dataset):
         self.hasBeenInited = False
         self.dataset = dataset
-        self.nAtoms = self.dataset.getNAtoms()
+
+        # Get atom count for current index (important for variable datasets)
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # Use current index if it exists, otherwise default to 0 (first geometry)
+            index = self.index if hasattr(self, 'index') else 0
+            self.nAtoms = dataset.getNAtoms(index)
+        else:
+            self.nAtoms = dataset.getNAtoms()
+
+        # Auto-set bond type based on dataset composition
+        # Variable datasets (different molecule sizes) → Dynamic bonds
+        # Uniform datasets (same molecule size) → Fixed bonds
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            self.loupe.settings.setParameter("bondType", "Dynamic", refresh=False)
+        else:
+            self.loupe.settings.setParameter("bondType", "Fixed", refresh=False)
 
         for prop in self.props.values():
             prop.onDatasetInit()
@@ -307,7 +329,9 @@ class InteractiveCanvas(Widget):
         self.hasBeenInited = True
         self.visualRefresh()
         # self.onNewGeometry()
-        self.canvas.refreshPickingColors(self.dataset.getNAtoms())
+
+        # Refresh picking colors (use nAtoms which is index-specific for variable datasets)
+        self.canvas.refreshPickingColors(self.nAtoms)
 
     def size(self):
         return self.canvas.size
@@ -345,7 +369,25 @@ class InteractiveCanvas(Widget):
         if self.dataset is None:
             return
         index = min(index, self.dataset.getN() - 1)
-        self.index = index
+
+        # Check if atom count changed (for variable datasets)
+        if hasattr(self.dataset, 'isVariable') and self.dataset.isVariable:
+            new_nAtoms = self.dataset.getNAtoms(index)
+
+            # Check if this is not the first call and atom count changed
+            if hasattr(self, 'index'):
+                old_nAtoms = self.dataset.getNAtoms(self.index)
+                if old_nAtoms != new_nAtoms:
+                    # Atom count changed - refresh picking colors
+                    self.canvas.refreshPickingColors(new_nAtoms)
+                    # Update parent widget's nAtoms
+                    if hasattr(self.loupe, 'nAtoms'):
+                        self.loupe.nAtoms = new_nAtoms
+
+            self.index = index
+        else:
+            self.index = index
+
         self.onNewGeometry()
 
     def resetCurrentR(self):
@@ -502,7 +544,7 @@ class Loupe(Widget, EventChildClass):
         self.initialiseSettings()
 
         self.resize(1100, 800)
-        self.setWindowTitle(f"Loupe {N}")
+        self.setWindowTitle(f"3D View {N}")
 
         # SIDEBAR HERE
         self.sideBarContainer = Widget(layout="vertical", parent=self)
@@ -535,6 +577,16 @@ class Loupe(Widget, EventChildClass):
 
         # EVENTS
         self.eventSubscribe("SUBDATASET_INDICES_CHANGED", self.onSubChanged)
+        self.eventSubscribe("REMOTE_ARRAY_FETCH_DONE", self.onRemoteArrayFetchDone)
+
+        #MENU BAR
+        self.mBar = QtWidgets.QMenuBar(self)
+        self.menuHandler = MenuHandler(self, mode="loupe")
+        self.layout.setMenuBar(self.mBar)
+
+    # Adding menu bar getter for MenuHandler to be able to properly initialize the menu
+    def menuBar(self):
+        return self.mBar
 
     # SETTINGS
     def initialiseSettings(self):
@@ -555,16 +607,18 @@ class Loupe(Widget, EventChildClass):
 
         # PLAYBACK
         playbackWindow = Widget(parent=pane, layout="vertical")
-        self.indexSlider = Slider()
+        self.indexSlider = Slider(parent=playbackWindow)
         self.indexSlider.setCallbackFunc(self.setIndex)
         playbackWindow.layout.addWidget(self.indexSlider)
 
         arrowBar = Widget(parent=pane, layout="horizontal")
-        self.indexLeftArrow = ToolButton(self.onPrevious, "leftArrow")
+        self.indexLeftArrow = ToolButton(
+            self.onPrevious, "leftArrow", parent=arrowBar
+        )
         self.indexLeftArrow.setToolTip("Previous frame")
-        self.playButton = ToolButton(self.toggleVideo, "start")
+        self.playButton = ToolButton(self.toggleVideo, "start", parent=arrowBar)
         self.playButton.setToolTip("Toggle animation")
-        self.indexRightArrow = ToolButton(self.onNext, "rightArrow")
+        self.indexRightArrow = ToolButton(self.onNext, "rightArrow", parent=arrowBar)
         self.indexRightArrow.setToolTip("Next frame")
 
         arrowBar.layout.addStretch()
@@ -615,6 +669,17 @@ class Loupe(Widget, EventChildClass):
         self.selectedDatasetKey = key
 
         dataset = self.getSelectedDataset()
+
+        # Remote proxy — trigger array fetch and wait for REMOTE_ARRAY_FETCH_DONE
+        if dataset is not None and getattr(dataset, "is_remote_proxy", False):
+            logger.info(
+                "Loupe: remote proxy selected (%r) — triggering array fetch",
+                key,
+            )
+            self.env.taskFetchRemoteDataset(dataset.fingerprint)
+            # Don't call setDataset yet; onRemoteArrayFetchDone will resume
+            return
+
         self.canvas.setDataset(dataset)
 
         self.index = 0
@@ -631,6 +696,12 @@ class Loupe(Widget, EventChildClass):
             return
 
         self.onDatasetSelected(key, force=True)
+
+    def onRemoteArrayFetchDone(self, fingerprint):
+        """Arrays for a remote dataset arrived — refresh Loupe if it's selected."""
+        if fingerprint == self.selectedDatasetKey:
+            logger.info("Loupe: remote arrays ready for %r — refreshing", fingerprint)
+            self.onDatasetSelected(fingerprint, force=True)
 
     # INDEX
     def updateCurrentIndex(self):

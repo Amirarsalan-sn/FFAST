@@ -2,6 +2,13 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from config.uiConfig import config, configStyleSheet
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QWidget, QTabWidget, QFileDialog
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QLineEdit,
+    QDialogButtonBox,
+)
 from config.uiConfig import config, getIcon
 from PySide6.QtWidgets import QSizePolicy
 import pyqtgraph
@@ -208,18 +215,18 @@ class Slider(Widget):
         self.hasEditBox = hasEditBox
         self.interval = 1
 
-        self.slider = QtWidgets.QSlider(Qt.Horizontal)
+        self.slider = QtWidgets.QSlider(Qt.Horizontal, parent=self)
         self.layout.addWidget(self.slider)
         self.slider.valueChanged.connect(self.onUpdateSlider)
 
         if hasEditBox:
-            self.lineEdit = LineEdit()
+            self.lineEdit = LineEdit(parent=self)
             self.lineEdit.setFixedWidth(50)
             self.layout.addWidget(self.lineEdit)
             self.lineEdit.setOnEdit(self.onUpdateLineEdit)
 
         if label is not None:
-            self.label = QtWidgets.QLabel(label)
+            self.label = QtWidgets.QLabel(label, parent=self)
             self.layout.insertWidget(0, self.label)
             self.layout.setSpacing(8)
 
@@ -538,7 +545,7 @@ class HorizontalContainerScrollArea(Widget):
     def __init__(self, **kwargs):
         super().__init__(layout="vertical", **kwargs)
         self.scrollArea = HorizontalExpandingScrollArea()
-        self.content = Widget(layout="horizontal")
+        self.content = Widget(parent=self, layout="horizontal")
         self.scrollArea.setContent(self.content)
         self.layout.addWidget(self.scrollArea)
 
@@ -621,7 +628,7 @@ class CollapsibleWidget(Widget):
         self.layout.addWidget(self.titleButton)
 
         if widget is None:
-            self.scrollWidget = Widget(layout="vertical")
+            self.scrollWidget = Widget(parent=self, layout="vertical")
             self.scrollLayout = self.scrollWidget.layout
         else:
             self.scrollWidget = widget
@@ -785,11 +792,11 @@ class InfoWidget(Widget):
         # ADD LABELS
         nRows = len(args)
         for i in range(self.nRows, nRows):
-            labelLeft = QtWidgets.QLabel("")
+            labelLeft = QtWidgets.QLabel("", parent=self)
             labelLeft.setObjectName("LeftLabel")
             self.layout.addWidget(labelLeft, i, 0)
 
-            labelRight = QtWidgets.QLabel("")
+            labelRight = QtWidgets.QLabel("", parent=self)
             labelRight.setObjectName("RightLabel")
             self.layout.addWidget(labelRight, i, 1)
 
@@ -820,9 +827,9 @@ class FlexibleHList(Widget):
 
     def __init__(self, elementSize=150, **kwargs):
         super().__init__(layout="horizontal", **kwargs)
-        self.gridWidget = Widget(layout="grid")
+        self.gridWidget = Widget(parent=self, layout="grid")
         self.gridWidget.layout.setSpacing(5)
-        self.spacerWidget = Widget()
+        self.spacerWidget = Widget(parent=self)
         self.gridLayout = self.gridWidget.layout
 
         self.gridWidget.setSizePolicy(
@@ -1119,7 +1126,7 @@ class BasicLabelWidget(Widget):
 
         self.layout.setContentsMargins(spacing, spacing, spacing, spacing)
 
-        self.label = QtWidgets.QLabel("")
+        self.label = QtWidgets.QLabel("", parent=self)
         self.layout.addWidget(self.label)
 
     def setText(self, s):
@@ -1193,13 +1200,14 @@ class TableView(Widget):
         self.headerTopLabels = []
         self.headerLeftLabels = []
         self.cornerLabel = BasicLabelWidget(
+            parent=self,
             widgetName="tableHeaderLabelCorner",
             styleSheet=self.headerLabelStyleSheet,
             spacing=self.spacing,
             color="transparent",
         )
         self.columnWidgets = []
-        self.headerLeftWidget = Widget(layout="vertical")
+        self.headerLeftWidget = Widget(parent=self, layout="vertical")
         self.headerLeftWidget.layout.addWidget(self.cornerLabel)
         self.layout.addWidget(self.headerLeftWidget)
 
@@ -1211,6 +1219,7 @@ class TableView(Widget):
         for col in range(0, nCols):
             for row in range(len(self.labels[col]), nRows):
                 label = BasicLabelWidget(
+                    parent=self.columnWidgets[col],
                     widgetName="tableHeaderLabel",
                     styleSheet=self.labelStyleSheet,
                     spacing=self.spacing,
@@ -1244,6 +1253,7 @@ class TableView(Widget):
         # CREATE LEFT HEADERS
         for row in range(len(self.headerLeftLabels), nRows):
             label = BasicLabelWidget(
+                parent=self.headerLeftWidget,
                 widgetName="tableHeaderLabelLeft",
                 styleSheet=self.headerLabelStyleSheet,
                 spacing=self.spacing,
@@ -1254,11 +1264,12 @@ class TableView(Widget):
 
         # CREATE TOP HEADERS
         for col in range(len(self.columnWidgets), nCols):
-            self.columnWidgets.append(Widget(layout="vertical"))
+            self.columnWidgets.append(Widget(parent=self, layout="vertical"))
             self.layout.addWidget(self.columnWidgets[col])
             self.labels.append([])
 
             label = BasicLabelWidget(
+                parent=self.columnWidgets[col],
                 widgetName="tableHeaderLabelTop",
                 styleSheet=self.headerLabelStyleSheet,
                 spacing=self.spacing,
@@ -1351,7 +1362,7 @@ class SettingsWidgetBase(Widget, EventChildClass):
             self.setFixedHeight(40)
 
         if hasLabel:
-            self.label = QtWidgets.QLabel(str(name))
+            self.label = QtWidgets.QLabel(str(name), parent=self)
             self.layout.addWidget(self.label)
             self.label.setFixedWidth(labelWidth)
             self.layout.addStretch()
@@ -1416,10 +1427,10 @@ class SettingsCheckBox(SettingsWidgetBase):
         self.checkBox.stateChanged.connect(self.callback)
 
     def _getValue(self):
-        return self.checkBox.checkState()
+        return self.checkBox.isChecked()
 
     def _setValue(self, b):
-        self.checkBox.setChecked(b)
+        self.checkBox.setChecked(bool(b) if b is not None else False)
 
 
 class SettingsComboBox(SettingsWidgetBase):
@@ -1541,6 +1552,9 @@ class SettingsLineEdit(SettingsWidgetBase):
             val = QtGui.QDoubleValidator(
                 nMin, nMax, 4, notation=QtGui.QDoubleValidator.StandardNotation
             )
+            # Set locale to C (uses period as decimal separator)
+            from PySide6.QtCore import QLocale
+            val.setLocale(QLocale.c())
             self.lineEdit.setValidator(val)
 
         self.setDefault()
@@ -1551,6 +1565,7 @@ class SettingsLineEdit(SettingsWidgetBase):
     def _getValue(self):
         t = self.lineEdit.text()
         if self.isFloat:
+            logging.info(f"Getting float value {t} from SettingsLineEdit {self}")
             return float(t)
         elif self.isInt:
             return int(t)
@@ -1722,17 +1737,17 @@ class SettingsPane(Widget, EventChildClass):
 #############
 
 
-def customFileDialog(parent, fileTypes=None, extensions=None, save=False):
+def customFileDialog(parent, fileTypes=None, extensions=None, save=False, directory=""):
     options = QFileDialog.Options()
 
     if fileTypes is None:
         if save:
             fileName, selectedFilter = QFileDialog.getSaveFileName(
-                parent, "Save File", "", options=options
+                parent, "Save File", directory, options=options
             )
         else:
             fileName, selectedFilter = QFileDialog.getOpenFileName(
-                parent, "Open File", "", options=options
+                parent, "Open File", directory, options=options
             )
         return fileName, None
     else:
@@ -1746,11 +1761,11 @@ def customFileDialog(parent, fileTypes=None, extensions=None, save=False):
         filterString = ";;".join(filterList)
         if save:
             fileName, selectedFilter = QFileDialog.getSaveFileName(
-                parent, "Save File", "", filterString, options=options
+                parent, "Save File", directory, filterString, options=options
             )
         else:
             fileName, selectedFilter = QFileDialog.getOpenFileName(
-                parent, "Open File", "", filterString, options=options
+                parent, "Open File", directory, filterString, options=options
             )
 
         if fileName == "":
@@ -1758,3 +1773,101 @@ def customFileDialog(parent, fileTypes=None, extensions=None, save=False):
 
         filterIndex = filterList.index(selectedFilter)
         return fileName, fileTypes[filterIndex]
+
+
+class BigDatasetWarningDialog(QDialog):
+    def __init__(self, file_size_mb, dataset_length, parent=None):
+        super().__init__(parent)
+        self.user_clicked_pick_samples = False
+        self.user_clicked_load_no_cache = False
+        self.dataset_length = dataset_length
+        self.setWindowTitle("Attention")
+        self.resize(700, 250)
+        self.setModal(True)
+
+        self.file_size_mb = file_size_mb  # assume 1500 or whatever you measured
+
+        layout = QVBoxLayout()
+
+        # Warning text
+        msg = (
+            "The dataset that you selected is very big. "
+            "For efficient processing, you might want to select samples from the dataset "
+            "(pick every 10 atomic structures or every 100, etc.). "
+            "If you are sure that your system can handle this dataset just press 'Load as a whole (without caching)', "
+            "otherwise write your desired slice number in the box below and select "
+            "'Pick samples'. "
+            "If your system does not have enough resources, yet you still want to have all of the dataset you can click"
+            " on 'Load as a whole'. This way, your dataset will be stored partially on RAM and partially on hard "
+            "drive (like a caching mechanism), but it will greatly increase the computation time of the program."
+            "\n\nAlso, note that the RAM usage estimation shown below only specifies the required space to store the "
+            "dataset itself, the values used in plots are also stored in RAM to avoid recalculation. So, the "
+            "approximation suggests a minimum on the demanded volume."
+        )
+
+        label = QLabel(msg)
+        label.setWordWrap(True)
+        label.setAlignment(Qt.AlignTop)
+        layout.addWidget(label)
+
+        # Input field
+        self.slice_input = QLineEdit()
+        self.slice_input.setPlaceholderText("e.g., 10, 100, ...")
+        layout.addWidget(self.slice_input)
+
+        # RAM‑usage feedback label
+        self.ram_hint = QLabel(f"You require approximately {2*self.file_size_mb/1_000_000_000:.2f} GB of RAM "
+                               f"(dataset itself+ its prediction dataset in future)!\nDataset length: "
+                               f"{self.dataset_length} atoms.")
+        self.ram_hint.setStyleSheet("color: #666; font-size: 10pt;")
+        layout.addWidget(self.ram_hint)
+
+        # Buttons
+        button_box = QDialogButtonBox()
+        button_box.addButton("Load as a whole", QDialogButtonBox.AcceptRole)
+        load_no_cache = button_box.addButton("Load as a whole (without caching)", QDialogButtonBox.AcceptRole)
+        pick_btn = button_box.addButton("Pick samples", QDialogButtonBox.ActionRole)
+
+        layout.addWidget(button_box)
+        self.setLayout(layout)
+
+        # Connect slice input text change
+        self.slice_input.textChanged.connect(self.update_ram_hint)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        button_box.clicked.connect(self.on_button_clicked)
+        pick_btn.clicked.connect(self.accept)
+        load_no_cache.clicked.connect(self.accept)
+
+    def on_button_clicked(self, button):
+        if button.text() == "Pick samples":
+            self.user_clicked_pick_samples = True
+        elif button.text() == "Load as a whole (without caching)":
+            self.user_clicked_load_no_cache = True
+
+    def update_ram_hint(self):
+        text = self.slice_input.text().strip()
+        if text:
+            try:
+                slice_num = int(text)
+                if slice_num <= 0:
+                    hint = "Slice number must be a positive integer."
+                else:
+                    effective_size = (self.file_size_mb / slice_num)/1_000_000_000
+                    hint = (
+                        f"For this slice factor, you require approximately "
+                        f"{2*effective_size:.2f} GB of RAM (dataset itself+ its prediction dataset in future)!"
+                        f"\nDataset length: {self.dataset_length//slice_num} atoms."
+                    )
+            except ValueError:
+                hint = "Please enter a valid integer slice number."
+        else:
+            hint = f"RAM usage estimate will appear here.\nDataset length: {self.dataset_length} atoms."
+
+        self.ram_hint.setText(hint)
+
+    def get_slice_number(self):
+        text = self.slice_input.text().strip()
+        if text:
+            return text
+        return None

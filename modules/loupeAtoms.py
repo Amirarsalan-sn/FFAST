@@ -20,21 +20,39 @@ class AtomsElement(VisualElement):
             parent=parent,
             light_color=(0, 0, 0),
             light_ambient=1,
-            antialias=1,
+            antialias=0,
         )
         super().__init__(*args, **kwargs, singleElement=self.scatter)
         self.edge_width = 0.02
         # self.colors = (1,1,1)
 
     def onDatasetInit(self):
-        z = self.canvas.dataset.getElements()
-        self.elementColors = (
-            atomColors[z] / 255 * getConfig("loupeAtomColorDimming")
-        )
-        self.sizes = covalentRadii[z]
+        dataset = self.canvas.dataset
+
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # For variable datasets, colors/sizes will be computed per-geometry
+            self.elementColors = None
+            self.sizes = None
+        else:
+            # For uniform datasets, cache colors and sizes
+            z = dataset.getElements()
+            self.elementColors = (
+                atomColors[z] / 255 * getConfig("loupeAtomColorDimming")
+            )
+            self.sizes = covalentRadii[z]
 
     def onNewGeometry(self):
         R = self.canvas.getCurrentR()
+        dataset = self.canvas.dataset
+
+        # For variable datasets, recompute colors and sizes per-geometry
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            z = dataset.getElements(self.canvas.index)
+            self.elementColors = (
+                atomColors[z] / 255 * getConfig("loupeAtomColorDimming")
+            )
+            self.sizes = covalentRadii[z]
+
         self.pos = R
         self.queueVisualRefresh()
 
@@ -56,10 +74,14 @@ class AtomsElement(VisualElement):
 
         colors = self.getColors(picking, pickingColors)
 
+        # Apply size scale from settings
+        scale = self.canvas.settings.get("atomSizeScale", 1.0)
+        scaled_sizes = self.sizes * scale
+
         self.scatter.set_data(
             self.pos,
             face_color=colors,
-            size=self.sizes,
+            size=scaled_sizes,
             edge_width=0 if picking else self.edge_width,
             edge_color=getConfig("loupeBondsColor"),
         )
@@ -83,11 +105,25 @@ class AtomsHoverElement(VisualElement):
         super().__init__(*args, **kwargs, singleElement=self.scatter)
 
     def onDatasetInit(self):
-        z = self.canvas.dataset.getElements()
-        self.sizes = covalentRadii[z]
+        dataset = self.canvas.dataset
+
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # For variable datasets, sizes will be computed per-geometry
+            self.sizes = None
+        else:
+            # For uniform datasets, cache sizes
+            z = dataset.getElements()
+            self.sizes = covalentRadii[z]
 
     def onNewGeometry(self):
         R = self.canvas.getCurrentR()
+        dataset = self.canvas.dataset
+
+        # For variable datasets, recompute sizes per-geometry
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            z = dataset.getElements(self.canvas.index)
+            self.sizes = covalentRadii[z]
+
         self.pos = R
         self.queueVisualRefresh()
 
@@ -98,6 +134,7 @@ class AtomsHoverElement(VisualElement):
         if hover is not None:
             pos = np.array([self.pos[hover]])
             size = self.sizes[hover]
+            scale = self.canvas.settings.get("atomSizeScale", 1.0)
             if not self.scatter.visible:
                 self.scatter.visible = True
 
@@ -107,7 +144,7 @@ class AtomsHoverElement(VisualElement):
 
         self.scatter.set_data(
             pos,
-            size=size,
+            size=10*size*scale,
             edge_width=0.12,
             edge_color=getConfig("loupeHoverColor"),
             face_color="#00000000",
@@ -128,11 +165,25 @@ class AtomsSelectedElement(VisualElement):
         super().__init__(*args, **kwargs, singleElement=self.scatter)
 
     def onDatasetInit(self):
-        z = self.canvas.dataset.getElements()
-        self.sizes = covalentRadii[z]
+        dataset = self.canvas.dataset
+
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            # For variable datasets, sizes will be computed per-geometry
+            self.sizes = None
+        else:
+            # For uniform datasets, cache sizes
+            z = dataset.getElements()
+            self.sizes = covalentRadii[z]
 
     def onNewGeometry(self):
         R = self.canvas.getCurrentR()
+        dataset = self.canvas.dataset
+
+        # For variable datasets, recompute sizes per-geometry
+        if hasattr(dataset, 'isVariable') and dataset.isVariable:
+            z = dataset.getElements(self.canvas.index)
+            self.sizes = covalentRadii[z]
+
         self.pos = R
         self.queueVisualRefresh()
 
@@ -146,6 +197,7 @@ class AtomsSelectedElement(VisualElement):
         if selected is not None:
             pos = self.pos[selected]
             size = self.sizes[selected]
+            scale = self.canvas.settings.get("atomSizeScale", 1.0)
             if not self.scatter.visible:
                 self.scatter.visible = True
 
@@ -155,7 +207,7 @@ class AtomsSelectedElement(VisualElement):
 
         self.scatter.set_data(
             pos,
-            size=size,
+            size=10*size*scale,
             edge_width=0.12,
             edge_color=getConfig("loupeSelectColor"),
             face_color="#00000000",
@@ -169,8 +221,20 @@ def addAtomsObject(UIHandler, loupe):
 
 
 def addSettings(UIHandler, loupe):
+    from functools import partial
+
+    def updateAtomSize(loupe):
+        """Update atom size scale."""
+        atomsElement = loupe.canvas.elements.get("AtomsElement")
+        if atomsElement:
+            atomsElement.queueVisualRefresh()
+
     settings = loupe.settings
-    settings.addParameters(**{"atomColorType": ["Elements", "updateGeometry"]})
+    settings.addAction("updateAtomSize", partial(updateAtomSize, loupe))
+    settings.addParameters(**{
+        "atomColorType": ["Elements", "updateGeometry"],
+        "atomSizeScale": [1.0, "updateAtomSize", "visualRefresh"],
+    })
 
 
 def addSettingsPane(UIHandler, loupe):

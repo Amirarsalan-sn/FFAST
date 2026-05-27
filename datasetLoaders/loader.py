@@ -1,4 +1,5 @@
 from collections import Counter
+from ase.calculators.calculator import PropertyNotImplementedError
 import numpy as np
 import os
 from utils import md5FromArraysAndStrings, removeExtension
@@ -47,6 +48,7 @@ class DatasetLoader(EventClass):
     isAtomFiltered = False
     isGhost = False
     frozen = False
+    isVariable = False  # Flag for uniform (False) vs variable-sized (True) datasets
 
     def __init__(self, path):
         self.path = path
@@ -110,9 +112,17 @@ class DatasetLoader(EventClass):
     def getFingerprint(self):
         z = self.getElements()
         r = self.getCoordinates()
-        e = self.getEnergies()
-        f = self.getForces()
-        fp = md5FromArraysAndStrings(z, r, e, f)
+        try:
+            e = self.getEnergies()
+        except (PropertyNotImplementedError, RuntimeError):
+            logger.warning("Energy not available for fingerprint. Using coordinates only.")
+            e = None
+        try:
+            f = self.getForces()
+        except (PropertyNotImplementedError, RuntimeError):
+            logger.warning("Forces not available for fingerprint. Using coordinates only.")
+            f = None
+        fp = md5FromArraysAndStrings(*(x for x in (z, r, e, f) if x is not None))
 
         return fp
 
@@ -191,6 +201,289 @@ class DatasetLoader(EventClass):
         # base datasets cant depend on other things, thats for subdatasets
         return False
 
+    def isUniform(self):
+        """Check if this dataset has uniform molecular structures."""
+        return not self.isVariable
+
+
+class VariableDatasetLoader(EventClass):
+    """
+    Base class for datasets with variable-sized molecules.
+    Uses flat arrays with offsets for efficient storage and access.
+
+    Data structure:
+        R_flat: (total_atoms, 3)        - All positions concatenated
+        F_flat: (total_atoms, 3)        - All forces concatenated
+        E: (N,)                         - Energies (unchanged from uniform)
+        z_flat: (total_atoms,)          - Atomic numbers concatenated
+        molecule_offsets: (N+1,)        - Start indices [0, n1, n1+n2, ..., total]
+    """
+
+    isVariable = True
+    isSubDataset = False
+    isAtomFiltered = False
+    isGhost = False
+    frozen = False
+    loadeeType = "dataset"
+
+    zIntToZStr = zIntToZStr
+    zStrToZInt = zStrToZInt
+
+    datasetName = "Variable Dataset"
+    datasetFileExtension = "*"
+    saveFormats = [None]
+
+    name = "?"
+    loaded = False
+    active = True
+
+    def __init__(self, path):
+        self.path = path
+
+        global GLOBAL_DATASETS_COUNTER
+
+        colors = getConfig("datasetColors")
+        nColors = len(colors)
+        self.color = hexToRGB(colors[GLOBAL_DATASETS_COUNTER % nColors])
+
+        GLOBAL_DATASETS_COUNTER += 1
+
+        # To be set by subclasses:
+        self.R_flat = None          # (total_atoms, 3)
+        self.F_flat = None          # (total_atoms, 3)
+        self.E = None               # (N,)
+        self.z_flat = None          # (total_atoms,)
+        self.molecule_offsets = None  # (N+1,)
+        self.N = None               # Number of molecules
+
+    def isUniform(self):
+        """Check if this dataset has uniform molecular structures."""
+        return False
+
+    def getNAtoms(self, index=None):
+        """
+        Return atom count(s).
+
+        Args:
+            index: If None, returns array of all counts. If int, returns count for that molecule.
+
+        Returns:
+            int or ndarray: Atom count(s)
+        """
+        if index is None:
+            return np.diff(self.molecule_offsets)
+        else:
+            return int(self.molecule_offsets[index+1] - self.molecule_offsets[index])
+
+    def getN(self):
+        """Return number of molecules/configurations."""
+        return self.N
+
+    def getCoordinates(self, indices=None):
+        """
+        Get atomic coordinates for molecule(s).
+
+        Args:
+            indices: None (all), int (single), or array (multiple)
+
+        Returns:
+            Single molecule: ndarray (n_atoms_i, 3)
+            Multiple molecules: list of ndarrays
+        """
+        if indices is None:
+            indices = np.arange(self.N)
+        elif not isinstance(indices, np.ndarray) and not hasattr(indices, '__iter__'):
+            # Single molecule - return array directly
+            start = self.molecule_offsets[indices]
+            end = self.molecule_offsets[indices+1]
+            return self.R_flat[start:end]
+
+        # Multiple molecules - return list
+        result = []
+        for idx in indices:
+            start = self.molecule_offsets[idx]
+            end = self.molecule_offsets[idx+1]
+            result.append(self.R_flat[start:end])
+        return result
+
+    def getEnergies(self, indices=None):
+        """Get energies for molecule(s)."""
+        if indices is None:
+            return self.E
+        else:
+            return self.E[indices]
+
+    def getForces(self, indices=None):
+        """
+        Get forces for molecule(s).
+
+        Returns:
+            Single molecule: ndarray (n_atoms_i, 3)
+            Multiple molecules: list of ndarrays
+        """
+        if indices is None:
+            indices = np.arange(self.N)
+        elif not isinstance(indices, np.ndarray) and not hasattr(indices, '__iter__'):
+            # Single molecule
+            start = self.molecule_offsets[indices]
+            end = self.molecule_offsets[indices+1]
+            return self.F_flat[start:end]
+
+        # Multiple molecules
+        result = []
+        for idx in indices:
+            start = self.molecule_offsets[idx]
+            end = self.molecule_offsets[idx+1]
+            result.append(self.F_flat[start:end])
+        return result
+
+    def getElements(self, index=None):
+        """
+        Get atomic numbers.
+
+        Args:
+            index: If None, returns z_flat (all atoms). If int, returns z for that molecule.
+
+        Returns:
+            ndarray: Atomic numbers
+        """
+        if index is None:
+            return self.z_flat
+        else:
+            start = self.molecule_offsets[index]
+            end = self.molecule_offsets[index+1]
+            return self.z_flat[start:end]
+
+    def getElementsName(self):
+        """Get element names for all atoms."""
+        return [zIntToZStr[x] for x in self.z_flat]
+
+    def zToChemicalFormula(self, z):
+        """Convert atomic numbers to chemical formula."""
+        z = [zIntToZStr[x] for x in z]
+        c = Counter(z)
+        s = ""
+
+        if "C" in c:
+            s += f'C{c["C"]}'
+
+        if "H" in c:
+            s += f'H{c["H"]}'
+
+        for atom, n in sorted(c.items()):
+            if atom == "H" or atom == "C":
+                continue
+
+            if n < 2:
+                n = ""
+            s += f"{atom}{n}"
+
+        return s
+
+    def getChemicalFormula(self):
+        """Get chemical formula showing atom range."""
+        atom_counts = self.getNAtoms()
+        return f"Variable ({atom_counts.min()}-{atom_counts.max()} atoms)"
+
+    def getFingerprint(self):
+        """Generate fingerprint from all data."""
+        # Use all flat arrays for fingerprint
+        fp = md5FromArraysAndStrings(self.z_flat, self.R_flat, self.E, self.F_flat)
+        return fp
+
+    def getKey(self):
+        return self.getFingerprint()
+
+    def setName(self, name):
+        if name == "":
+            return self.setName(self.name)
+        self.name = name
+        if self.loaded:
+            self.eventPush("OBJECT_NAME_CHANGED", self.fingerprint)
+
+    def getName(self):
+        return self.name
+
+    def initialise(self):
+        """Initialize dataset after loading."""
+        self.fingerprint = self.getFingerprint()
+
+        name = removeExtension(os.path.basename(self.path))
+        self.setName(name)
+
+        # Note: bondSizes cannot be precomputed for variable datasets
+        # Each molecule will need its own bond matrix
+        self.bondSizes = None
+
+    def getPDist(self, indices=None):
+        """Get pairwise distances - handle variable sizes."""
+        coords = self.getCoordinates(indices=indices)
+
+        if isinstance(coords, list):
+            # Multiple molecules
+            result = []
+            for r in coords:
+                if len(r) >= 2:
+                    result.append(pdist(r))
+                else:
+                    result.append(None)
+            return result
+        else:
+            # Single molecule
+            if len(coords) >= 2:
+                return pdist(coords)
+            else:
+                return None
+
+    def getDisplayName(self):
+        tag = ""
+        if self.isSubDataset:
+            tag = "*"
+        return f"{tag}{self.getName()}"
+
+    def setActive(self, state):
+        if self.active == state:
+            return
+        self.active = state
+        self.eventPush("DATASET_STATE_CHANGED", self.fingerprint)
+
+    def onDelete(self):
+        pass
+
+    def getBaseInfo(self):
+        atom_counts = self.getNAtoms()
+        return [
+            ("N. conf.", f"{self.getN()}"),
+            ("N. atoms", f"{atom_counts.min()}-{atom_counts.max()}"),
+            ("Chem. form.", self.getChemicalFormula()),
+        ]
+
+    def getInfo(self):
+        # To be overwritten by specific dataset types
+        return []
+
+    def setColor(self, r, g, b):
+        self.color = [r, g, b]
+        self.eventPush("OBJECT_COLOR_CHANGED", self.fingerprint)
+
+    def getBondMatrix(self, index):
+        """Get bond matrix for a specific molecule."""
+        r = self.getCoordinates(index)
+        z = self.getElements(index)
+        bondSizes = covalentBonds[z][:, z] * getConfig("loupeBondsLenience")
+        d = distance_matrix(r, r)
+        return d < bondSizes
+
+    def getBondIndices(self, index):
+        """Get bond indices for a specific molecule."""
+        idxs = np.argwhere(self.getBondMatrix(index))
+        _, idxs = cleanBondIdxsArray(idxs)
+        return idxs
+
+    def isDependentOn(self, fp):
+        # base datasets cant depend on other things, thats for subdatasets
+        return False
+
 
 class SubDataset(DatasetLoader):
     loadeeType = "dataset"
@@ -216,7 +509,16 @@ class SubDataset(DatasetLoader):
         self.indices = indices
         self.updatePath()
 
-        self.bondSizes = parentDataset.bondSizes
+        # Bond sizes handling: None for variable parents
+        if hasattr(parentDataset, 'isVariable') and parentDataset.isVariable:
+            self.bondSizes = None
+        else:
+            self.bondSizes = parentDataset.bondSizes
+
+    @property
+    def isVariable(self):
+        """Forward isVariable flag from parent."""
+        return hasattr(self.parent, 'isVariable') and self.parent.isVariable
 
     def updatePath(self):
         if self.modelDep is None:
@@ -291,14 +593,54 @@ class SubDataset(DatasetLoader):
             idx = idx[indices]
         return self.parent.getPDist(indices=idx)
 
-    def getNAtoms(self):
-        return self.parent.getNAtoms()
+    def getNAtoms(self, index=None):
+        """
+        Get atom count(s) for subdataset.
+
+        Args:
+            index: If None and parent is variable, returns array of counts for sub-indices.
+                   If index is int, returns count for that molecule in subdataset.
+        """
+        if hasattr(self.parent, 'isVariable') and self.parent.isVariable:
+            if index is None:
+                # Return atom counts for all molecules in subdataset
+                return self.parent.getNAtoms()[self.indices]
+            else:
+                # Remap index to parent
+                parent_idx = self.indices[index]
+                return self.parent.getNAtoms(parent_idx)
+        else:
+            # Uniform parent
+            return self.parent.getNAtoms()
 
     def getChemicalFormula(self):
+        if hasattr(self.parent, 'isVariable') and self.parent.isVariable:
+            # For variable parents, show range
+            atom_counts = self.getNAtoms()
+            if isinstance(atom_counts, np.ndarray):
+                return f"Variable ({atom_counts.min()}-{atom_counts.max()} atoms)"
+            else:
+                return f"{atom_counts} atoms"
         return self.parent.chem
 
-    def getElements(self):
-        return self.parent.z
+    def getElements(self, index=None):
+        """
+        Get elements for subdataset.
+
+        Args:
+            index: If specified and parent is variable, get elements for that molecule.
+        """
+        if hasattr(self.parent, 'isVariable') and self.parent.isVariable:
+            if index is not None:
+                # Get elements for specific molecule in subdataset
+                parent_idx = self.indices[index]
+                return self.parent.getElements(parent_idx)
+            else:
+                # Return all elements (z_flat) from parent
+                return self.parent.getElements()
+        else:
+            # Uniform parent
+            return self.parent.z
 
     def getLattice(self):
         return self.parent.getLattice()

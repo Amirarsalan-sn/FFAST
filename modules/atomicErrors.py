@@ -34,19 +34,51 @@ def loadData(env):
                 idxs = np.argwhere(z == i)
                 idxs = idxs.flatten()
 
-                diff = diffAll[:, idxs, :]
+                # Handle variable vs uniform datasets
+                if isinstance(diffAll, list):
+                    # Variable dataset: compute per-molecule MAE for atoms of type i
+                    mae_list = []
+                    for mol_idx in range(len(diffAll)):
+                        z_mol = dataset.getElements(mol_idx)
+                        mol_idxs = np.argwhere(z_mol == i).flatten()
+                        if len(mol_idxs) > 0:
+                            mol_diff = diffAll[mol_idx][mol_idxs]  # (n_atoms_of_type_i, 3)
+                            mol_mae = np.mean(np.abs(mol_diff))
+                            mae_list.append(mol_mae)
 
-                diff = diff.reshape(diff.shape[0], -1)
-                mae = np.mean(np.abs(diff), axis=1)
+                    if len(mae_list) == 0:
+                        # No atoms of this type found
+                        continue
 
-                kde = gaussian_kde(np.abs(mae))
+                    mae = np.array(mae_list)
+                else:
+                    # Uniform dataset: diffAll is (N, M, 3) array
+                    diff = diffAll[:, idxs, :]
+                    diff = diff.reshape(diff.shape[0], -1)
+                    mae = np.mean(np.abs(diff), axis=1)
 
-                distX = np.linspace(
-                    np.min(mae) * 0.95,
-                    np.max(mae) * 1.05,
-                    getConfig("plotDistNum"),
-                )
-                distY = kde(distX)
+                absMae = np.abs(mae)
+                nPts = getConfig("plotDistNum")
+
+                if len(absMae) < 2 or np.std(absMae) < 1e-10:
+                    distX = np.linspace(
+                        0,
+                        max(np.max(absMae), 1e-10),
+                        nPts,
+                    )
+                    distY = np.zeros_like(distX)
+                    closest_idx = np.argmin(
+                        np.abs(distX - np.mean(absMae))
+                    )
+                    distY[closest_idx] = 1.0
+                else:
+                    kde = gaussian_kde(absMae)
+                    distX = np.linspace(
+                        np.min(absMae) * 0.95,
+                        np.max(absMae) * 1.05,
+                        nPts,
+                    )
+                    distY = kde(distX)
 
                 out[zIntToZStr[i]] = {"distY": distY, "distX": distX}
 
@@ -77,11 +109,29 @@ def loadData(env):
                 idxs = np.argwhere(z == i)
                 idxs = idxs.flatten()
 
-                diff = diffAll[:, idxs, :]
+                # Handle variable vs uniform datasets
+                if isinstance(diffAll, list):
+                    # Variable dataset: aggregate all atoms of type i across all molecules
+                    diff_list = []
+                    for mol_idx in range(len(diffAll)):
+                        z_mol = dataset.getElements(mol_idx)
+                        mol_idxs = np.argwhere(z_mol == i).flatten()
+                        if len(mol_idxs) > 0:
+                            diff_list.append(diffAll[mol_idx][mol_idxs].flatten())
 
-                diff = diff.reshape(diff.shape[0], -1)
-                mae = np.mean(np.abs(diff))
-                rmse = np.sqrt(np.mean(diff ** 2))
+                    if len(diff_list) == 0:
+                        # No atoms of this type found
+                        continue
+
+                    diff = np.concatenate(diff_list)
+                    mae = np.mean(np.abs(diff))
+                    rmse = np.sqrt(np.mean(diff ** 2))
+                else:
+                    # Uniform dataset: diffAll is (N, M, 3) array
+                    diff = diffAll[:, idxs, :]
+                    diff = diff.reshape(diff.shape[0], -1)
+                    mae = np.mean(np.abs(diff))
+                    rmse = np.sqrt(np.mean(diff ** 2))
 
                 out[zIntToZStr[i]] = {"mae": mae, "rmse": rmse}
 

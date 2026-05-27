@@ -135,22 +135,62 @@ class ForceErrorColorProperty(CanvasProperty):
         data = dw.getWatchedData()
         if len(data) < 1:
             return
+        dataset = data[0]["dataset"]
         de = data[0][
             "dataEntry"
         ]  # just one dataset-model combination is watched
         atomicMAE = de.get("atomicMAE")
         if atomicMAE is None:
             return
-        meanAtomicMAE = np.mean(atomicMAE, axis=0)
-        perc = getConfig("loupeForceErrorPercentile") * 100
+
+        # Handle variable vs uniform datasets
+        if isinstance(atomicMAE, list):
+            # Variable dataset: atomicMAE is list of arrays with different shapes
+            # Compute global statistics by flattening all arrays
+            atomicMAE_flat = np.concatenate([mae.flatten() for mae in atomicMAE])
+            perc = getConfig("loupeForceErrorPercentile") * 100
+            max_val = np.percentile(atomicMAE_flat, perc)
+
+            # Compute atom-weighted species means across the full dataset,
+            # then map them back to each atom in each geometry.
+            species_sum = {}
+            species_count = {}
+            for i, mae_i in enumerate(atomicMAE):
+                z_i = dataset.getElements(i)
+                for z, mae in zip(z_i, mae_i):
+                    species_sum[z] = species_sum.get(z, 0.0) + float(mae)
+                    species_count[z] = species_count.get(z, 0) + 1
+
+            species_mean = {
+                z: species_sum[z] / species_count[z]
+                for z in species_sum.keys()
+            }
+
+            meanAtomicMAE = []
+            for i in range(len(atomicMAE)):
+                z_i = dataset.getElements(i)
+                meanAtomicMAE.append(
+                    np.array([species_mean[z] for z in z_i], dtype=float)
+                )
+
+            species_values = np.array(list(species_mean.values()), dtype=float)
+            meanMin = np.min(species_values)
+            meanMax = np.max(species_values)
+        else:
+            # Uniform dataset: original behavior
+            meanAtomicMAE = np.mean(atomicMAE, axis=0)
+            perc = getConfig("loupeForceErrorPercentile") * 100
+            max_val = np.percentile(atomicMAE, perc)
+            meanMin = np.min(meanAtomicMAE)
+            meanMax = np.max(meanAtomicMAE)
 
         self.set(
             atomicMAE=atomicMAE,
             meanAtomicMAE=meanAtomicMAE,
             min=0,
-            max=np.percentile(atomicMAE, perc),
-            meanMin=np.min(meanAtomicMAE),
-            meanMax=np.max(meanAtomicMAE),
+            max=max_val,
+            meanMin=meanMin,
+            meanMax=meanMax,
             isZeroModel=data[0]["model"].fingerprint == "zeroModel",
         )
 
@@ -201,13 +241,22 @@ class MeanForceErrorProperty(CanvasProperty):
         meanAtomicMAE = prop.get("meanAtomicMAE")
         if prop.cleared:
             return
+        if isinstance(meanAtomicMAE, list):
+            meanAtomicMAE = meanAtomicMAE[self.canvas.index]
         meanMin = prop.get("meanMin")
         meanMax = prop.get("meanMax")
         fork = meanMax - meanMin
-        colors = prop.getColors((meanAtomicMAE - meanMin) / fork)
+        if fork <= 0:
+            rel = np.zeros_like(meanAtomicMAE, dtype=float)
+        else:
+            rel = (meanAtomicMAE - meanMin) / fork
+
+        colors = prop.getColors(rel)
         self.set(colors=colors)
 
-
+    def onNewGeometry(self):
+        if getattr(self.canvas.dataset, "isVariable", False):
+            self.clear()
 class ForceErrorProperty(CanvasProperty):
 
     key = "forceError"
@@ -227,7 +276,12 @@ class ForceErrorProperty(CanvasProperty):
         minV = prop.get("min")
         maxV = prop.get("max")
         fork = maxV - minV
-        colors = prop.getColors((atomicMAE - minV) / fork)
+        if fork <= 0:
+            rel = np.zeros_like(atomicMAE, dtype=float)
+        else:
+            rel = (atomicMAE - minV) / fork
+
+        colors = prop.getColors(rel)
         self.set(colors=colors)
 
     def onNewGeometry(self):

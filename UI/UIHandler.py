@@ -3,6 +3,7 @@ import os
 import pyqtgraph
 from PySide6 import QtWidgets
 from PySide6.QtCore import QDir
+from PySide6.QtWidgets import QMessageBox
 
 from events import EventClass
 from UI.Loupe import Loupe
@@ -17,12 +18,17 @@ class UIHandler(EventClass):
     uiFilesPath = os.path.join("UI", "uiFiles")
     env = None
     tabs = []
-    loupes = []
+    loupes = 0
     loupeModules = []
+    activeLoupe = None  # Currently active Loupe for menu actions
+    workdir = None  # Working directory for file dialogs
+    energyShiftEnabled = False  # Global toggle for energy shift
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, workdir=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.workdir = workdir if workdir else os.getcwd()
         self.eventSubscribe("QUIT_READY", self.setQuitReady)
+        self.eventSubscribe('CLUSTER_FOR_VARIABLE', self.showCLusterVariable)
 
     def quitEvent(self):
         self.eventPush("QUIT_EVENT")
@@ -37,17 +43,35 @@ class UIHandler(EventClass):
     def setQuitReady(self):
         self.quitReady = True
 
+    def showCLusterVariable(self):
+        msg = QMessageBox(self.window)
+        msg.setWindowTitle("Notification")
+        msg.setText("The cluster errors feature is not supported for variable datasets.")
+        msg.setIcon(QMessageBox.Information)
+        msg.setStandardButtons(QMessageBox.Ok)
+
+        result = msg.exec()
+
     def nLoupes(self):
-        return len(self.loupes)
+        return self.loupes
+
+    """def getActiveLoupe(self):
+        \"""Get the currently active Loupe instance, or the most recently created one.\"""
+        if self.activeLoupe is not None:
+            return self.activeLoupe
+        elif len(self.loupes) > 0:
+            return self.loupes[-1]
+        return None"""
 
     def newLoupe(self):
-        loupe = Loupe(self, len(self.loupes))
+        loupe = Loupe(self, self.loupes)
 
         for func in self.loupeModules:
             func(self, loupe)
 
         loupe.forceUpdate()
-        self.loupes.append(loupe)
+        self.loupes += 1
+
         loupe.show()
         loupe.setFocus()
 
@@ -72,7 +96,8 @@ class UIHandler(EventClass):
         app.setQuitOnLastWindowClosed(False)
 
         # Load icons
-        QDir.addSearchPath("icon", "theme")
+        _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        QDir.addSearchPath("icon", os.path.join(_root, "theme"))
 
         # pyqtgraph configs
         self.initialisePlotConfigs()
@@ -83,7 +108,7 @@ class UIHandler(EventClass):
                 app.setStyle("Fusion")
 
             # Load styles
-            with open("style.qss", "r") as styleFile:
+            with open(os.path.join(_root, "style.qss"), "r") as styleFile:
                 styleSheet = styleFile.read()
 
             # set variables

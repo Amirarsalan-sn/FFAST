@@ -1,4 +1,4 @@
-import numpy as np
+"""import numpy as np
 from config.userConfig import getConfig
 import logging
 
@@ -29,13 +29,30 @@ def loadUI(UIHandler, env):
             # since there's a maximum number of indices on a scatter plot
             # see "scatterPlotNPoints" in the config file
             self.indices = {}
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy Scatter (shifted)"
+                if shifted
+                else "Energy Scatter"
+            )
+            self.visualRefresh(force=True)
 
         def addPlots(self):
             self.indices.clear()
+            shifted = self.handler.energyShiftEnabled
             for data in self.getWatchedData():
 
                 predE = data["dataEntry"].get("energy")
                 trueE = data["dataset"].getEnergies()
+
+                if shifted:
+                    shift = np.mean(predE - trueE)
+                    predE = predE - shift
 
                 # this is a unique key for the model/dataset combination
                 # perfect for saving the indices below uniquely
@@ -110,10 +127,21 @@ def loadUI(UIHandler, env):
         def addPlots(self):
 
             for data in self.getWatchedData():
-                predE = data["dataEntry"].get("forces").flatten()
-                trueE = data["dataset"].getForces().flatten()
+                dataset = data["dataset"]
+                pred_forces = data["dataEntry"].get("forces")
+                true_forces = dataset.getForces()
 
-                key = self.getKey(data["dataset"], data["model"])
+                # Handle variable vs uniform datasets
+                if isinstance(pred_forces, list):
+                    # Variable dataset: concatenate and flatten
+                    predE = np.concatenate([f.flatten() for f in pred_forces])
+                    trueE = np.concatenate([f.flatten() for f in true_forces])
+                else:
+                    # Uniform dataset: flatten directly
+                    predE = pred_forces.flatten()
+                    trueE = true_forces.flatten()
+
+                key = self.getKey(dataset, data["model"])
 
                 n = getConfig("scatterPlotNPoints")
                 if len(predE) > n:
@@ -139,8 +167,18 @@ def loadUI(UIHandler, env):
             y0, y1 = yRange
 
             de = self.env.getData("forces", dataset=dataset, model=model)
-            predF = de.get("forces").flatten()
-            trueF = dataset.getForces().flatten()
+            pred_forces = de.get("forces")
+            true_forces = dataset.getForces()
+
+            # Handle variable vs uniform datasets
+            if isinstance(pred_forces, list):
+                # Variable dataset: concatenate and flatten
+                predF = np.concatenate([f.flatten() for f in pred_forces])
+                trueF = np.concatenate([f.flatten() for f in true_forces])
+            else:
+                # Uniform dataset: flatten directly
+                predF = pred_forces.flatten()
+                trueF = true_forces.flatten()
 
             xTruth = (predF > x0) & (predF < x1)
             yTruth = (trueF > y0) & (trueF < y1)
@@ -153,10 +191,29 @@ def loadUI(UIHandler, env):
 
             # this is indices of the flattened forces by component
             # but we need the index of the geometry
-            nEntriesPerConf = dataset.getNAtoms() * 3
-            idxs = np.unique(np.floor(idxs / nEntriesPerConf)).astype(int)
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                # Variable dataset: use molecule_offsets to map flat indices to molecules
+                # Each flat index corresponds to a force component (atom * 3)
+                # We need to find which molecule each flat index belongs to
+                atom_offsets = dataset.molecule_offsets  # [0, n1, n1+n2, ...]
+                force_offsets = atom_offsets * 3  # Convert to force component offsets
+
+                # For each flat index, find which molecule it belongs to
+                mol_indices = []
+                for idx in idxs:
+                    # Find which molecule this flat index belongs to
+                    mol_idx = np.searchsorted(force_offsets[1:], idx, side='right')
+                    mol_indices.append(mol_idx)
+
+                idxs = np.unique(mol_indices).astype(int)
+            else:
+                # Uniform dataset: all molecules have same number of atoms
+                nEntriesPerConf = dataset.getNAtoms() * 3
+                idxs = np.unique(np.floor(idxs / nEntriesPerConf)).astype(int)
+
             return idxs
 
     plt = ForcesScatterPlot(UIHandler, parent=ct)
     ct.addWidget(plt, 0, 1)
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
+"""

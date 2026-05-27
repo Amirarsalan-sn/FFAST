@@ -10,13 +10,29 @@ DEPENDENCIES = ["loupeCamera"]
 
 
 class BondsElement(VisualElement):
-    def __init__(self, *args, parent=None, width=200, **kwargs):
+    def __init__(self, *args, parent=None, width=None, **kwargs):
         from vispy import scene
+
+        # Store canvas reference for later
+        canvas = kwargs.get('canvas')
+
+        # Get width from settings if available, otherwise from config
+        if width is None:
+            if canvas and hasattr(canvas, 'settings'):
+                width = canvas.settings.get("bondWidth", getConfig("loupeBondsWidth", 25))
+            else:
+                width = getConfig("loupeBondsWidth", 25)
+
+        # Get color from settings if available, otherwise from config
+        if canvas and hasattr(canvas, 'settings'):
+            color = canvas.settings.get("bondColor", getConfig("loupeBondsColor"))
+        else:
+            color = getConfig("loupeBondsColor")
 
         self.lines = scene.visuals.Line(
             pos=None,
             parent=parent,
-            color=getConfig("loupeBondsColor"),
+            color=color,
             width=width,
             connect="segments",
             antialias=True,
@@ -24,8 +40,20 @@ class BondsElement(VisualElement):
         super().__init__(*args, **kwargs, singleElement=self.lines)
         self.width = width
 
+    def setWidth(self, width):
+        """Update bond width and refresh display."""
+        self.width = width
+        self.onCameraChange()  # Recalculate scaled width
+        self.queueVisualRefresh()
+
     def onNewGeometry(self):
         self.queueVisualRefresh()
+
+    def getBondWidth(self):
+        """Get bond width from settings, falling back to instance default."""
+        if hasattr(self, 'canvas') and self.canvas is not None:
+            return self.canvas.settings.get("bondWidth", self.width)
+        return self.width
 
     def onCameraChange(self):
         dist = self.canvas.props["camera"].get("distance")
@@ -33,7 +61,9 @@ class BondsElement(VisualElement):
         if dist is None:
             dist = 1
 
-        self.lines.set_data(width=self.width / dist)
+        scaled_width = self.getBondWidth() / dist
+        self.lines.set_data(width=scaled_width)
+        self.lines.update()
 
     def _draw(self, picking=False, pickingColors=None):
 
@@ -43,16 +73,16 @@ class BondsElement(VisualElement):
         elif bondType == "Fixed":
             bonds = self.canvas.props["fixedBonds"].get("R")
 
-        width = self.canvas.props["camera"].get("distance")
+        dist = self.canvas.props["camera"].get("distance")
 
-        if width is None:
-            width = 1
+        if dist is None:
+            dist = 1
 
         if bonds is None:
             self.hide()
         else:
             self.show()
-            self.lines.set_data(pos=bonds, width=self.width / width)
+            self.lines.set_data(pos=bonds, width=self.getBondWidth() / dist)
 
 
 class DynamicBondsProperty(CanvasProperty):
@@ -163,14 +193,39 @@ def addSettings(UIHandler, loupe):
     def loupeClearBondProperty(loupe):
         loupe.canvas.props["fixedBonds"].clear()
 
+    def loupeUpdateBondWidth(loupe):
+        """Update bond width from settings."""
+        bondsElement = loupe.canvas.elements.get("BondsElement")
+        if bondsElement:
+            bondsElement.queueVisualRefresh()
+
+    def loupeUpdateBondColor(loupe):
+        """Update bond color from settings."""
+        color = loupe.settings.get("bondColor")
+        bondsElement = loupe.canvas.elements.get("BondsElement")
+        if bondsElement:
+            bondsElement.lines.set_data(color=color)
+            bondsElement.queueVisualRefresh()
+
     ## LOUPE SETTINGS
     settings = loupe.settings
     settings.addAction(
         "clearBondProperty", partial(loupeClearBondProperty, loupe)
     )
+    settings.addAction(
+        "updateBondWidth", partial(loupeUpdateBondWidth, loupe)
+    )
+    settings.addAction(
+        "updateBondColor", partial(loupeUpdateBondColor, loupe)
+    )
+    # Note: bondType default is "Fixed", but Loupe.setDataset() will auto-set:
+    #   - "Fixed" for uniform datasets (same chemical composition)
+    #   - "Dynamic" for variable datasets (different molecule sizes)
     settings.addParameters(
         **{
             "bondType": ["Fixed", "updateGeometry"],
+            "bondWidth": [100, "updateBondWidth", "visualRefresh"],
+            "bondColor": [getConfig("loupeBondsColor"), "updateBondColor", "visualRefresh"],
             "fixedBondIndices": [None, "clearBondProperty", "updateGeometry"],
         }
     )

@@ -1,7 +1,28 @@
 import asyncio
+import argparse
 import logging
 import os
 import sys
+from pathlib import Path
+import site
+
+# Fix Qt plugin path issue - must be set before importing PySide6
+if "QT_PLUGIN_PATH" not in os.environ:
+    # Find PySide6 without importing it (to avoid triggering Qt init)
+    for site_dir in site.getsitepackages():
+        pyside6_path = Path(site_dir) / "PySide6"
+        if pyside6_path.exists():
+            plugin_path = pyside6_path / "Qt" / "plugins"
+            lib_path = pyside6_path / "Qt" / "lib"
+            if plugin_path.exists():
+                # Set multiple Qt environment variables for maximum compatibility
+                os.environ["QT_PLUGIN_PATH"] = str(plugin_path)
+                os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = str(plugin_path / "platforms")
+                os.environ["DYLD_LIBRARY_PATH"] = str(lib_path)
+                os.environ["DYLD_FRAMEWORK_PATH"] = str(lib_path)
+                # Explicitly set platform to cocoa on macOS
+                os.environ["QT_QPA_PLATFORM"] = "cocoa"
+                break
 
 from PySide6.QtWidgets import QApplication
 from qasync import QEventLoop
@@ -72,37 +93,6 @@ async def eventLoop(UI, env):
     nh = NathHorthath(env)
     taskManager = env.tm
 
-    # Temporarily putting some preliminary tasks here
-    if True and os.path.exists("private"):
-        # env.taskLoadDataset("private/big.npz", "sGDML")
-        # env.taskLoadDataset("private/myoglobin_1000.npz")
-        # env.taskLoadDataset("private/ethanol_spl_200.npz", "sGDML")
-        # env.taskLoadDataset("private/ethanol_spl_100.npz", "sGDML")
-        # env.taskLoadDataset("private/grid.npz", "sGDML")
-        # env.taskLoadDataset("private/DHA_1000.xyz", "ase")
-        env.taskLoadDataset("private/AcAla3_1000.npz", "sGDML")
-        env.taskLoadDataset("private/AcPhe_2000.npz", "sGDML")
-        # env.taskLoad("private/saves/MACE")
-        # env.taskLoadDataset("private/unfolding_100.npz", "sGDML")
-        # env.taskLoadDataset("private/unfolding.npz", "sGDML")
-        # env.taskLoad("private/saves/unfolding")
-        # env.taskLoadDataset("private/md22_stachyose.npz", "sGDML")
-        # env.taskLoad("private/saves/MACE")
-        # env.taskLoadModel("private/neq_DHA_1000.pth", "Nequip")
-        # env.taskLoadModel("private/neq_sal_1000.pth")
-        # env.taskLoadModel("private/ethanol_def_1000.npz", "sGDML")
-        # env.taskLoadModel("private/eth_il_1000.npz", "sGDML")
-        # env.taskLoadModel("private/eth_schnet", "SchNet")
-        # env.loadZeroModel()
-
-        # dpath = "private/train.npz"
-        # # mpath = "private/maceIgor/MACE_tea_graphene_200_final_run-3_swa.model"
-        # env.taskLoadDataset(dpath, "sGDML")
-        # # env.taskLoadModel(mpath, "MACE")
-        # env.taskLoad("maceGraphene")
-        pass
-
-    # env.newTask(nh.countingTask, name="TaskWatchDog", visual=True)
     while not UI.quitReady:
         await UI.eventHandle()
         await env.eventHandle()
@@ -118,7 +108,7 @@ async def eventLoop(UI, env):
     await taskManager.quit()
 
 
-def main():
+def main(workdir=None):
     from UI.UIHandler import UIHandler
 
     app = QApplication(sys.argv)
@@ -126,7 +116,7 @@ def main():
     event_loop = QEventLoop(app)
     asyncio.set_event_loop(event_loop)
 
-    UI = UIHandler()
+    UI = UIHandler(workdir=workdir)
     UI.launch(app)
 
     env = Environment(headless=False)
@@ -139,7 +129,45 @@ def main():
     event_loop.close()
 
 
+def cli():
+    parser = argparse.ArgumentParser(
+        description="FFAST - Force Field Analysis and Visualization Tool"
+    )
+    parser.add_argument(
+        "--workdir",
+        type=str,
+        default=None,
+        help="Set working directory for file dialogs (default: current directory)",
+    )
+    args = parser.parse_args()
+
+    workdir = None
+    if args.workdir:
+        workdir = os.path.abspath(os.path.expanduser(args.workdir))
+        if not os.path.isdir(workdir):
+            print(
+                f"Warning: Working directory '{workdir}' does not exist. Using current directory."
+            )
+            workdir = None
+
+    main(workdir=workdir)
+
+
 if __name__ == "__main__":
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description='FFAST - Force Field Analysis and Visualization Tool')
+    parser.add_argument('--workdir', type=str, default=None,
+                        help='Set working directory for file dialogs (default: current directory)')
+    args = parser.parse_args()
+
+    # Validate and convert workdir to absolute path
+    workdir = None
+    if args.workdir:
+        workdir = os.path.abspath(os.path.expanduser(args.workdir))
+        if not os.path.isdir(workdir):
+            print(f"Warning: Working directory '{workdir}' does not exist. Using current directory.")
+            workdir = None
+
     # add logging filters
     class VispyNoiseFilter(logging.Filter):
         def filter(self, record):
@@ -155,8 +183,11 @@ if __name__ == "__main__":
     setupLogger()
     logger = logging.getLogger("FFAST")
 
+    if workdir:
+        logger.info(f"Working directory set to: {workdir}")
+
     try:
-        main()
+        main(workdir=workdir)
     except RuntimeError as e:
         if str(e) == "Event loop stopped before Future completed.":
             sys.exit()

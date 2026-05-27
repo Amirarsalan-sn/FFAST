@@ -132,8 +132,8 @@ class TaskManager(EventClass):
         if threaded:
             co = asyncio.to_thread(func, *args, **kwargs, taskID=taskID)
 
-            async def taskWrapper(c0, taskID):
-                await co
+            async def taskWrapper(c0, taskID):  # this should receive co not c0, but the code still works!!
+                await c0  # changed await co to await c0
                 self.eventPush("TASK_DONE", taskID)
 
             task = loop.create_task(taskWrapper(co, taskID))
@@ -204,6 +204,8 @@ class TaskManager(EventClass):
         prog=None,
         percent=False,
         message="Working...",
+        error=False,
+        title=None,
     ):
         task = self.getTask(taskID)
         if task is None:
@@ -215,3 +217,6 @@ class TaskManager(EventClass):
             task["progress"] = None
 
         task["progressMessage"] = message
+        task["error"] = error
+        if title is not None:
+            task["name"] = title

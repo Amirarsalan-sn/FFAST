@@ -33,7 +33,7 @@ def agglomerative(desc, n, nInitPoints, env, taskID):
     lDescRest = len(descRest)
 
     cinitLabels = AgglomerativeClustering(
-        affinity="euclidean", n_clusters=n, linkage="complete"
+        metric="euclidean", n_clusters=n, linkage="complete"
     ).fit_predict(descInit)
 
     # gather cluster data from labels and return to original indices
@@ -129,6 +129,12 @@ def loadData(env):
         def data(self, dataset=None, model=None, taskID=None):
             env = self.env
 
+            # Check if variable dataset - clustering not yet supported
+            if hasattr(dataset, 'isVariable') and dataset.isVariable:
+                logger.info("Dataset clustering is not yet supported for variable-sized datasets. Skipping cluster calculation.")
+                # Return True to signal task completion (prevents infinite retry loop)
+                return True
+
             schemes = getConfig("clusterScheme")
             clinds = [np.arange(dataset.getN())]
             for s in schemes:
@@ -162,12 +168,27 @@ def loadData(env):
             env = self.env
 
             err = env.getData("forcesError", model=model, dataset=dataset)
-            diff = np.abs(err.get("diff"))
-            diff = diff.reshape(diff.shape[0], -1)
-            mae = np.abs(diff)
 
-            clind = env.getData("datasetCluster", dataset=dataset)
-            clind = clind.get("clind")
+            # Check if clustering data is available
+            clind_data = env.getData("datasetCluster", dataset=dataset)
+            if clind_data is None:
+                logger.info("No cluster data available. Skipping cluster force error calculation.")
+                # Return True to signal task completion (prevents infinite retry loop)
+                return True
+
+            diff = np.abs(err.get("diff"))
+
+            # Handle variable vs uniform datasets
+            if isinstance(diff, list):
+                # Variable dataset - flatten all diffs
+                diff = np.concatenate([d.flatten() for d in diff])
+                mae = np.abs(diff)
+            else:
+                # Uniform dataset
+                diff = diff.reshape(diff.shape[0], -1)
+                mae = np.abs(diff)
+
+            clind = clind_data.get("clind")
 
             clerr = []
             for x in clind:
@@ -190,18 +211,34 @@ def loadData(env):
             env = self.env
 
             err = env.getData("energyError", model=model, dataset=dataset)
-            diff = np.abs(err.get("diff"))
-            diff = diff.reshape(diff.shape[0], -1)
-            mae = np.abs(diff)
 
-            clind = env.getData("datasetCluster", dataset=dataset)
-            clind = clind.get("clind")
+            # Check if clustering data is available
+            clind_data = env.getData("datasetCluster", dataset=dataset)
+            if clind_data is None:
+                logger.info("No cluster data available. Skipping cluster energy error calculation.")
+                return True
+
+            rawDiff = err.get("diff")
+            shift = err.get("shift")
+
+            # Unshifted cluster errors
+            mae = np.abs(rawDiff).reshape(-1)
+            clind = clind_data.get("clind")
 
             clerr = []
             for x in clind:
                 clerr.append(np.mean(mae[x]))
 
-            de = self.newDataEntity(clerr=np.array(clerr))
+            # Shifted cluster errors
+            shiftedMae = np.abs(rawDiff - shift).reshape(-1)
+            shiftedClerr = []
+            for x in clind:
+                shiftedClerr.append(np.mean(shiftedMae[x]))
+
+            de = self.newDataEntity(
+                clerr=np.array(clerr),
+                shiftedClerr=np.array(shiftedClerr),
+            )
             env.setData(de, self.key, model=model, dataset=dataset)
             return True
 
@@ -249,6 +286,9 @@ def loadUI(UIHandler, env):
         currentN = -1
         modelOrder = {}
 
+        def getClerr(self, de):
+            return de.get("clerr")
+
         def addPlots(self):
             i = 0
             orderedModelKey = None
@@ -258,7 +298,7 @@ def loadUI(UIHandler, env):
             for x in self.getWatchedData():
                 de = x["dataEntry"]
                 model = x["model"]
-                clerr = de.get("clerr")
+                clerr = self.getClerr(de)
                 N = len(clerr)
                 self.currentN = max(self.currentN, N)
 
@@ -389,6 +429,23 @@ def loadUI(UIHandler, env):
 
             self.setDataDependencies("clusterEnergyError")
             self.setYLabel("Energy MAE", getConfig("energyUnit"))
+            self.eventSubscribe(
+                "ENERGY_SHIFT_CHANGED", self.onEnergyShiftChanged
+            )
+
+        def onEnergyShiftChanged(self):
+            shifted = self.handler.energyShiftEnabled
+            self.titleLabel.setText(
+                "Energy Cluster Error (shifted)"
+                if shifted
+                else "Energy Cluster Error"
+            )
+            self.visualRefresh(force=True)
+
+        def getClerr(self, de):
+            if self.handler.energyShiftEnabled:
+                return de.get("shiftedClerr")
+            return de.get("clerr")
 
     ct = ContentTab(UIHandler)
     UIHandler.addContentTab(ct, "Cluster error")

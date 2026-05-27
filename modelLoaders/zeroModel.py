@@ -1,4 +1,4 @@
-from loaders.modelLoader import ModelLoader
+from modelLoaders.loader import ModelLoader
 import numpy as np
 
 
@@ -13,6 +13,15 @@ class ZeroModelLoader(ModelLoader):
 
     def predict(self, dataset, indices=None, batchSize=50, taskID=None):
         R = dataset.getCoordinates()
+
+        # Handle variable-sized datasets (R is list of arrays)
+        if isinstance(R, list):
+            n_molecules = len(R)
+            energies = np.zeros(n_molecules)
+            forces = [np.zeros_like(r) for r in R]
+            return energies, forces
+
+        # Handle uniform datasets (R is numpy array)
         return np.zeros(R.shape[0]), np.zeros_like(R)
 
     def getFingerprint(self):

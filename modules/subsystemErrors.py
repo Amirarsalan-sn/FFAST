@@ -23,7 +23,16 @@ def loadData(env):
                 env = self.env
 
                 err = env.getData("forcesError", model=model, dataset=dataset)
-                err = err.get("diff").sum(axis = 1)
+                diff_data = err.get("diff")
+
+                # Handle variable vs uniform datasets
+                if isinstance(diff_data, list):
+                    # Variable dataset: sum over atoms for each molecule
+                    err = np.array([d.sum(axis=0) for d in diff_data])  # (N, 3)
+                else:
+                    # Uniform dataset: sum over atoms (axis=1)
+                    err = diff_data.sum(axis=1)  # (N, 3)
+
                 diff = np.abs(err)
                 diff = diff.reshape(diff.shape[0], -1)
                 mae = np.mean(np.abs(diff), axis=1)
@@ -59,7 +68,15 @@ def loadData(env):
         def data(self, dataset=None, model=None, taskID=None):
             env = self.env
             err = env.getData("forcesError", model=model, dataset=dataset)
-            err = err.get("diff").sum(axis = 1)
+            diff_data = err.get("diff")
+
+            # Handle variable vs uniform datasets
+            if isinstance(diff_data, list):
+                # Variable dataset: sum over atoms for each molecule
+                err = np.array([d.sum(axis=0) for d in diff_data])  # (N, 3)
+            else:
+                # Uniform dataset: sum over atoms (axis=1)
+                err = diff_data.sum(axis=1)  # (N, 3)
 
             diff = np.abs(err)
             mae = np.mean(np.abs(diff))
@@ -106,7 +123,7 @@ def loadUI(UIHandler, env):
     ct.addDataSelectionCallback(plt.setModelDatasetDependencies)
 
     # TABLES
-    scrollContainer = HorizontalContainerScrollArea()
+    scrollContainer = HorizontalContainerScrollArea(parent=ct)
     scrollContainer.content.layout.setSpacing(32)
 
     class BaseTable(Table):
