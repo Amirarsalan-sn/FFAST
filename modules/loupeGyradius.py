@@ -117,7 +117,10 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradius")
             self.setXLabel("Configuration index")
             self.setYLabel("Gyration radius")
-            self.infoButton.setToolTip("Gyration radius of each structure inside the dataset")
+            self.infoButton.setToolTip(
+                "Gyration radius (root-mean-square distance of atoms from the center of mass) per structure, in dataset order.\n"
+                "A proxy for molecular size and shape compactness."
+            )
 
             self.slider = Slider(
                 parent=self,
@@ -171,7 +174,10 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradius")
             self.setXLabel("Configuration index")
             self.setYLabel("Gyradius/Energy (Normalised)")
-            self.infoButton.setToolTip("Gyration radius and Energy of each structure in the dataset.")
+            self.infoButton.setToolTip(
+                "Gyration radius and energy per structure, both min-max normalized to [0, 1] for visual comparison of trends.\n"
+                "Useful for spotting correlations between molecular conformation and energy across the trajectory."
+            )
 
             self.slider = Slider(
                 parent=self,
@@ -235,7 +241,10 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradius", "forcesError")
             self.setXLabel("Configuration index")
             self.setYLabel("Gyradius/Forces MAE (Normalised)")
-            self.infoButton.setToolTip("Gyration radius of each structure along with its predicted force MAE.")
+            self.infoButton.setToolTip(
+                "Gyration radius and force MAE (Mean Absolute Error) per structure, both min-max normalized to [0, 1] for visual comparison.\n"
+                "Reveals whether prediction errors correlate with molecular size or shape changes."
+            )
 
             self.slider = Slider(
                 parent=self,
@@ -308,7 +317,10 @@ def loadUI(UIHandler, env):
             self.setDataDependencies("gyradiusDist")
             self.setXLabel("Gyradius")
             self.setYLabel("Density")
-            self.infoButton.setToolTip("Gyration radius distribution.")
+            self.infoButton.setToolTip(
+                "Distribution of gyration radii across the dataset.\n"
+                "Indicates how structurally diverse the dataset is in terms of molecular size."
+            )
 
         def addPlots(self):
             for data in self.getWatchedData():

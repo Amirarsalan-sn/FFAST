@@ -25,6 +25,9 @@ def loadData(env):
                 err = env.getData("forcesError", model=model, dataset=dataset)
                 diff_data = err.get("diff")
 
+                # TODO: apply atom mask from 3D viewer selection so only the
+                # user-selected subsystem atoms are summed (currently sums all atoms).
+
                 # Handle variable vs uniform datasets
                 if isinstance(diff_data, list):
                     # Variable dataset: sum over atoms for each molecule
@@ -70,6 +73,8 @@ def loadData(env):
             err = env.getData("forcesError", model=model, dataset=dataset)
             diff_data = err.get("diff")
 
+            # TODO: apply atom mask from 3D viewer selection (currently sums all atoms).
+
             # Handle variable vs uniform datasets
             if isinstance(diff_data, list):
                 # Variable dataset: sum over atoms for each molecule
@@ -102,17 +107,20 @@ def loadUI(UIHandler, env):
         def __init__(self, handler, **kwargs):
             super().__init__(
                 handler,
-                title="Forces MAE distribution",
+                title="Subsystem Force MAE distribution",
                 isSubbable=False,
-                name="Force Error Distribution",
+                name="Subsystem Force Error Distribution",
                 **kwargs,
             )
             self.setDataDependencies("forcesErrorSubsysDist")
             self.setXLabel("Forces MAE", getConfig("forceUnit"))
             self.setYLabel("Density")
-            self.infoButton.setToolTip("""
-This plot shows the difference (MAE) between the predicted net force applied to the system, and the ab-initio net force (either across different samples of the same molecular structure evolving over time, aka fixed datasets, or across different samples of different systems, aka variable datasets).
-            """)
+            self.infoButton.setToolTip(
+                "Distribution of the net force error on the selected atom subsystem across the dataset.\n"
+                "For each structure, force errors of the selected atoms are summed to give the net force error vector on the subsystem; "
+                "the MAE (Mean Absolute Error) of its (x, y, z) components is plotted.\n"
+                "Define the subsystem using the 3D viewer's atom selection."
+            )
 
 
         def addPlots(self):
